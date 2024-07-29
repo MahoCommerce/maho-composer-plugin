@@ -43,8 +43,9 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         $projectDir = getcwd();
         $pubDir = $projectDir . '/pub';
 
-        $io->write("MahoComposerPlugin: Post-install routine called.");
+        $io->write("MahoComposerPlugin: Post-command routine called.");
 
+        // Recursive function to copy directory contents
         function copyDirectory($src, $dst, $io)
         {
             if (!is_dir($src)) {
@@ -75,13 +76,12 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
             $io->write("Directory not found: $mahoPubDir");
         }
 
-        // Step 2: Search for 'skin' directories
+        // Step 2: Search for 'skin' directories and copy to pub/skin
         $io->write("Searching for 'skin' directories in the vendor folder...");
         $skinDirs = glob($vendorDir . '/*/*/skin', GLOB_ONLYDIR);
 
         foreach ($skinDirs as $sourceDir) {
-            $relativePath = substr($sourceDir, strlen($vendorDir) + 1);
-            $targetDir = $pubDir . '/' . $relativePath;
+            $targetDir = $pubDir . '/skin';
 
             $io->write("Found 'skin' directory: $sourceDir");
             $io->write("Copying to: $targetDir");
@@ -89,13 +89,12 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
             copyDirectory($sourceDir, $targetDir, $io);
         }
 
-        // Step 3: Search for 'js' directories
+        // Step 3: Search for 'js' directories and copy to pub/js
         $io->write("Searching for 'js' directories in the vendor folder...");
         $jsDirs = glob($vendorDir . '/*/*/js', GLOB_ONLYDIR);
 
         foreach ($jsDirs as $sourceDir) {
-            $relativePath = substr($sourceDir, strlen($vendorDir) + 1);
-            $targetDir = $pubDir . '/' . $relativePath;
+            $targetDir = $pubDir . '/js';
 
             $io->write("Found 'js' directory: $sourceDir");
             $io->write("Copying to: $targetDir");
@@ -103,6 +102,6 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
             copyDirectory($sourceDir, $targetDir, $io);
         }
 
-        $io->write("MahoComposerPlugin: Post-install routine completed.");
+        $io->write("MahoComposerPlugin: Post-command routine completed.");
     }
 }
