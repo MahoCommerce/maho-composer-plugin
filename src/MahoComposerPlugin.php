@@ -11,6 +11,8 @@ use Composer\Script\ScriptEvents;
 
 class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
 {
+    private static $hasRun = false;
+
     public function activate(Composer $composer, IOInterface $io)
     {
         // This method is called when the plugin is activated
@@ -37,6 +39,12 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
 
     public function onPostCmd(Event $event)
     {
+        if (self::$hasRun) {
+            return;
+        }
+
+        self::$hasRun = true;
+
         $io = $event->getIO();
         $composer = $event->getComposer();
         $vendorDir = $composer->getConfig()->get('vendor-dir');
