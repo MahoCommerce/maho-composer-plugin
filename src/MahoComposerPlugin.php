@@ -35,7 +35,7 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         ];
     }
 
-    public function onPostInstall(Event $event)
+    public function onPostCmd(Event $event)
     {
         $io = $event->getIO();
         $composer = $event->getComposer();
