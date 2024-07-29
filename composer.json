@@ -1,0 +1,15 @@
+{
+    "name": "mahocommerce/maho-composer-plugin",
+    "type": "composer-plugin",
+    "require": {
+        "composer-plugin-api": "^2.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Maho\\": "src/"
+        }
+    },
+    "extra": {
+        "class": "Maho\\MahoComposerPlugin"
+    }
+}
