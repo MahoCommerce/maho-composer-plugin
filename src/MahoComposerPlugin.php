@@ -99,7 +99,7 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         }
 
         $dir = opendir($src);
-        @mkdir($dst);
+        mkdir($dst);
         while (false !== ($file = readdir($dir))) {
             if (($file != '.') && ($file != '..')) {
                 if (is_dir($src . '/' . $file)) {
