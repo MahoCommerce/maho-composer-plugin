@@ -29,7 +29,9 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
     public static function getSubscribedEvents()
     {
         return [
-            ScriptEvents::POST_INSTALL_CMD => 'onPostInstall'
+            ScriptEvents::POST_INSTALL_CMD => 'onPostCmd',
+            ScriptEvents::POST_UPDATE_CMD => 'onPostCmd',
+            ScriptEvents::POST_CREATE_PROJECT_CMD => 'onPostCmd'
         ];
     }
 
