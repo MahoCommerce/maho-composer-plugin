@@ -13,6 +13,21 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
 {
     private static $hasRun = false;
 
+    public function activate(Composer $composer, IOInterface $io)
+    {
+        // This method is called when the plugin is activated
+    }
+
+    public function deactivate(Composer $composer, IOInterface $io)
+    {
+        // This method is called when the plugin is deactivated
+    }
+
+    public function uninstall(Composer $composer, IOInterface $io)
+    {
+        // This method is called when the plugin is uninstalled
+    }
+
     public static function getSubscribedEvents()
     {
         return [
