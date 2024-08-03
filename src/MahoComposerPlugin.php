@@ -89,7 +89,7 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         }
 
         // Step 4: copy the maho CLI command
-        copy("$projectDir/vendor/mahocommerce/maho/maho", '.');
+        copy("$projectDir/vendor/mahocommerce/maho/maho", './maho');
 
         $io->write("MahoComposerPlugin: Post-command routine completed.");
     }
