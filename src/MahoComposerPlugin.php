@@ -49,47 +49,11 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         $composer = $event->getComposer();
         $vendorDir = $composer->getConfig()->get('vendor-dir');
         $projectDir = getcwd();
-        $pubDir = $projectDir . '/pub';
 
         $io->write("MahoComposerPlugin: Post-command routine called.");
 
-        // Step 1: Copy vendor/mahocommerce/maho/pub to the project main folder
-        $mahoPubDir = $vendorDir . '/mahocommerce/maho/pub';
-        if (is_dir($mahoPubDir)) {
-            $io->write("Copying $mahoPubDir to $projectDir");
-            $this->copyDirectory($mahoPubDir, $projectDir, $io);
-        } else {
-            $io->write("Directory not found: $mahoPubDir");
-        }
-
-        // Step 2: Search for 'skin' directories and copy to pub/skin
-        $io->write("Searching for 'skin' directories in the vendor folder...");
-        $skinDirs = glob($vendorDir . '/*/*/skin', GLOB_ONLYDIR);
-
-        foreach ($skinDirs as $sourceDir) {
-            $targetDir = $pubDir . '/skin';
-
-            $io->write("Found 'skin' directory: $sourceDir");
-            $io->write("Copying to: $targetDir");
-
-            $this->copyDirectory($sourceDir, $targetDir, $io);
-        }
-
-        // Step 3: Search for 'js' directories and copy to pub/js
-        $io->write("Searching for 'js' directories in the vendor folder...");
-        $jsDirs = glob($vendorDir . '/*/*/js', GLOB_ONLYDIR);
-
-        foreach ($jsDirs as $sourceDir) {
-            $targetDir = $pubDir . '/js';
-
-            $io->write("Found 'js' directory: $sourceDir");
-            $io->write("Copying to: $targetDir");
-
-            $this->copyDirectory($sourceDir, $targetDir, $io);
-        }
-
-        // Step 4: copy the maho CLI command
-        copy("$projectDir/vendor/mahocommerce/maho/maho", './maho');
+        $this->copyDirectory("$vendorDir/mahocommerce/maho/pub", "$projectDir/pub", $io);
+        copy("$vendorDir/mahocommerce/maho/maho", './maho');
 
         $io->write("MahoComposerPlugin: Post-command routine completed.");
     }
