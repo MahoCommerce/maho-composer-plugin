@@ -50,13 +50,9 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         $vendorDir = $composer->getConfig()->get('vendor-dir');
         $projectDir = getcwd();
 
-        $io->write("MahoComposerPlugin: Post-command routine called.");
-
         $this->copyDirectory("$vendorDir/mahocommerce/maho/pub", "$projectDir/pub", $io);
         copy("$vendorDir/mahocommerce/maho/maho", './maho');
         chmod('./maho', 0744);
-
-        $io->write("MahoComposerPlugin: Post-command routine completed.");
     }
 
     private function copyDirectory($src, $dst, $io)
