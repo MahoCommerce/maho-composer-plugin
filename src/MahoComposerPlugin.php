@@ -51,6 +51,9 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         $projectDir = getcwd();
 
         $this->copyDirectory("$vendorDir/mahocommerce/maho/pub", "$projectDir/pub", $io);
+        $this->copyDirectory("$vendorDir/tinymce/tinymce", "$projectDir/pub/js/tinymce", $io);
+        $this->copyDirectory("$vendorDir/mklkj/tinymce-i18n/langs6", "$projectDir/pub/js/tinymce/langs", $io);
+
         copy("$vendorDir/mahocommerce/maho/maho", './maho');
         chmod('./maho', 0744);
     }
