@@ -58,8 +58,13 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         }
 
         // This has to be done for all projects
-        $this->copyDirectory("$vendorDir/tinymce/tinymce", "$projectDir/public/js/tinymce", $io);
-        $this->copyDirectory("$vendorDir/mklkj/tinymce-i18n/langs6", "$projectDir/public/js/tinymce/langs", $io);
+        if (file_exists("$vendorDir/tinymce/tinymce")) {
+            $this->copyDirectory("$vendorDir/tinymce/tinymce", "$projectDir/public/js/tinymce", $io);
+        }
+
+        if (file_exists("$vendorDir/mklkj/tinymce-i18n/langs6")) {
+            $this->copyDirectory("$vendorDir/mklkj/tinymce-i18n/langs6", "$projectDir/public/js/tinymce/langs", $io);
+        }
     }
 
     private function copyDirectory($src, $dst, $io)
