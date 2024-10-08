@@ -16,23 +16,27 @@ class MahoAutoload
         self::$modules = [];
 
         $datasets = InstalledVersions::getAllRawData();
-        $dataset = end($datasets); // We only care about the packages installed to root vendor dir
 
-        foreach ($dataset['versions'] as $package => $info) {
-            if (!isset($info['install_path'])) {
-                continue;
-            }
-            if (!in_array($info['type'], ['maho-source', 'maho-module', 'magento-module'])) {
-                continue;
-            }
-            $module = [
-                'type' => $info['type'],
-                'path' => realpath($info['install_path']),
-            ];
-            if ($package === 'mahocommerce/maho') {
-                self::$modules = [$package => $module] + self::$modules;
-            } else {
-                self::$modules[$package] = $module;
+        foreach ($datasets as $dataset) {
+            foreach ($dataset['versions'] as $package => $info) {
+                if (isset(self::$modules[$package])) {
+                    continue;
+                }
+                if (!isset($info['install_path'])) {
+                    continue;
+                }
+                if (!in_array($info['type'], ['maho-source', 'maho-module', 'magento-module'])) {
+                    continue;
+                }
+                $module = [
+                    'type' => $info['type'],
+                    'path' => realpath($info['install_path']),
+                ];
+                if ($package === 'mahocommerce/maho') {
+                    self::$modules = [$package => $module] + self::$modules;
+                } else {
+                    self::$modules[$package] = $module;
+                }
             }
         }
 
@@ -41,11 +45,10 @@ class MahoAutoload
 
     public static function generatePaths(string $BP): array
     {
-        $datasets = InstalledVersions::getAllRawData();
-        $dataset = end($datasets); // We only care about the packages installed to root vendor dir
+        $modules = self::getInstalledModules();
 
-        $MAHO_IS_CHILD_PROJECT = $dataset['root']['name'] !== 'mahocommerce/maho';
-        $MAHO_FRAMEWORK_DIR = realpath($dataset['versions']['mahocommerce/maho']['install_path']);
+        $MAHO_FRAMEWORK_DIR = $modules['mahocommerce/maho']['path'];
+        $MAHO_IS_CHILD_PROJECT = $MAHO_FRAMEWORK_DIR !== realpath($BP);
 
         $codePools = [
             'app/code/local' => [],
@@ -67,7 +70,7 @@ class MahoAutoload
             $addIfExists($BP, 'lib');
         }
 
-        foreach (self::getInstalledModules() as $module => $info) {
+        foreach ($modules as $module => $info) {
             if ($module === 'mahocommerce/maho') {
                 continue;
             }
