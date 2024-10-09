@@ -7,6 +7,7 @@ use Composer\InstalledVersions;
 class MahoAutoload
 {
     protected static $modules = null;
+    protected static $paths = null;
 
     public static function getInstalledModules(string $projectDir): array
     {
@@ -46,6 +47,11 @@ class MahoAutoload
 
     public static function generatePaths(string $projectDir): array
     {
+        if (self::$paths !== null) {
+            return self::$paths;
+        }
+        self::$paths = [];
+
         $modules = self::getInstalledModules($projectDir);
 
         $codePools = [
@@ -86,7 +92,7 @@ class MahoAutoload
             $addIfExists($projectDir, 'lib');
         }
 
-        return array_merge(...array_values($codePools));
+        return self::$paths = array_merge(...array_values($codePools));
     }
 
     public static function generatePsr0(string $projectDir): array
