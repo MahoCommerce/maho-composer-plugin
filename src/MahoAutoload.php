@@ -133,7 +133,9 @@ class MahoAutoload
                     $classname = substr($file->getPathname(), strlen($path) + 1, -4);
                     $classname = str_replace('/controllers/', '/', $classname);
                     $classname = str_replace('/', '_', $classname);
-                    $classmaps[$classname] = $file->getPathname();
+                    if (!isset($classmaps[$classname])) {
+                        $classmaps[$classname] = $file->getPathname();
+                    }
                  }
             }
         }
