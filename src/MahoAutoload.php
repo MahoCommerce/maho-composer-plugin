@@ -117,4 +117,27 @@ class MahoAutoload
 
         return $prefixes;
     }
+
+    public static function generateControllerClassMap(string $projectDir): array
+    {
+        $paths = self::generatePaths($projectDir);
+
+        $classmaps = [];
+        foreach ($paths as $path) {
+            foreach (glob("$path/*/*/controllers", GLOB_ONLYDIR) as $dir) {
+                $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir));
+                foreach ($files as $file) {
+                    if (!$file->isFile() || !str_ends_with($file->getFileName(), 'Controller.php')) {
+                        continue;
+                    }
+                    $classname = substr($file->getPathname(), strlen($path) + 1, -4);
+                    $classname = str_replace('/controllers/', '/', $classname);
+                    $classname = str_replace('/', '_', $classname);
+                    $classmaps[$classname] = $file->getPathname();
+                 }
+            }
+        }
+
+        return $classmaps;
+    }
 }

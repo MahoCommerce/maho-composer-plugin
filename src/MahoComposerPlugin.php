@@ -87,6 +87,10 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
                 $autoloadDefinition['psr-0'][$prefix] ??= [];
                 array_push($autoloadDefinition['psr-0'][$prefix], ...$paths);
             }
+
+            $classMap = MahoAutoload::generateControllerClassMap($projectDir);
+            $autoloadDefinition['classmap'] ??= [];
+            array_push($autoloadDefinition['classmap'], ...array_values($classMap));
         }
 
         $rootPackage->setAutoload($autoloadDefinition);
