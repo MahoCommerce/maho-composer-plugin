@@ -8,7 +8,7 @@ class MahoAutoload
 {
     protected static $modules = null;
 
-    public static function getInstalledModules(): array
+    public static function getInstalledModules(string $projectDir): array
     {
         if (self::$modules !== null) {
             return self::$modules;
@@ -33,6 +33,7 @@ class MahoAutoload
                     'path' => realpath($info['install_path']),
                 ];
                 if ($package === 'mahocommerce/maho') {
+                    $module['isChildProject'] = $module['path'] !== realpath($projectDir);
                     self::$modules = [$package => $module] + self::$modules;
                 } else {
                     self::$modules[$package] = $module;
@@ -43,12 +44,9 @@ class MahoAutoload
         return self::$modules;
     }
 
-    public static function generatePaths(string $BP): array
+    public static function generatePaths(string $projectDir): array
     {
-        $modules = self::getInstalledModules();
-
-        $MAHO_FRAMEWORK_DIR = $modules['mahocommerce/maho']['path'];
-        $MAHO_IS_CHILD_PROJECT = $MAHO_FRAMEWORK_DIR !== realpath($BP);
+        $modules = self::getInstalledModules($projectDir);
 
         $codePools = [
             'app/code/local' => [],
@@ -63,37 +61,37 @@ class MahoAutoload
             }
         };
 
-        $addIfExists($BP, 'app/code/local');
-        $addIfExists($BP, 'app/code/community');
-        if ($MAHO_IS_CHILD_PROJECT) {
-            $addIfExists($BP, 'app/code/core');
-            $addIfExists($BP, 'lib');
+        $addIfExists($projectDir, 'app/code/local');
+        $addIfExists($projectDir, 'app/code/community');
+
+        if ($modules['mahocommerce/maho']['isChildProject']) {
+            $addIfExists($projectDir, 'app/code/core');
+            $addIfExists($projectDir, 'lib');
         }
 
         foreach ($modules as $module => $info) {
             if ($module === 'mahocommerce/maho') {
                 continue;
             }
-            $path = $info['path'];
             foreach (array_keys($codePools) as $codePool) {
-                $addIfExists($path, $codePool);
+                $addIfExists($info['path'], $codePool);
             }
         }
 
-        if ($MAHO_IS_CHILD_PROJECT) {
-            $addIfExists($MAHO_FRAMEWORK_DIR, 'app/code/core');
-            $addIfExists($MAHO_FRAMEWORK_DIR, 'lib');
+        if ($modules['mahocommerce/maho']['isChildProject']) {
+            $addIfExists($modules['mahocommerce/maho']['path'], 'app/code/core');
+            $addIfExists($modules['mahocommerce/maho']['path'], 'lib');
         } else {
-            $addIfExists($BP, 'app/code/core');
-            $addIfExists($BP, 'lib');
+            $addIfExists($projectDir, 'app/code/core');
+            $addIfExists($projectDir, 'lib');
         }
 
         return array_merge(...array_values($codePools));
     }
 
-    public static function generatePsr0(string $BP): array
+    public static function generatePsr0(string $projectDir): array
     {
-        $paths = self::generatePaths($BP);
+        $paths = self::generatePaths($projectDir);
 
         $prefixes = [];
         foreach ($paths as $path) {
