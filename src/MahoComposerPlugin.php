@@ -33,7 +33,8 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         return [
             ScriptEvents::POST_INSTALL_CMD => 'onPostCmd',
             ScriptEvents::POST_UPDATE_CMD => 'onPostCmd',
-            ScriptEvents::POST_CREATE_PROJECT_CMD => 'onPostCmd'
+            ScriptEvents::POST_CREATE_PROJECT_CMD => 'onPostCmd',
+            ScriptEvents::PRE_AUTOLOAD_DUMP => 'onPreAutoloadDumpCmd',
         ];
     }
 
@@ -65,6 +66,34 @@ class MahoComposerPlugin implements PluginInterface, EventSubscriberInterface
         if (file_exists("$vendorDir/mklkj/tinymce-i18n/langs6")) {
             $this->copyDirectory("$vendorDir/mklkj/tinymce-i18n/langs6", "$projectDir/public/js/tinymce/langs", $io);
         }
+    }
+
+    public function onPreAutoloadDumpCmd($event): void
+    {
+        $projectDir = getcwd();
+
+        $composer = $event->getComposer();
+        $rootPackage = $composer->getPackage();
+        $autoloadDefinition = $rootPackage->getAutoload();
+
+        if ($event->getFlags()['optimize']) {
+            $paths = MahoAutoload::generatePaths($projectDir);
+            $autoloadDefinition['classmap'] ??= [];
+            array_push($autoloadDefinition['classmap'], ...$paths);
+        } else {
+            $psr0 = MahoAutoload::generatePsr0($projectDir);
+            $autoloadDefinition['psr-0'] ??= [];
+            foreach ($psr0 as $prefix => $paths) {
+                $autoloadDefinition['psr-0'][$prefix] ??= [];
+                array_push($autoloadDefinition['psr-0'][$prefix], ...$paths);
+            }
+
+            $classMap = MahoAutoload::generateControllerClassMap($projectDir);
+            $autoloadDefinition['classmap'] ??= [];
+            array_push($autoloadDefinition['classmap'], ...array_values($classMap));
+        }
+
+        $rootPackage->setAutoload($autoloadDefinition);
     }
 
     private function copyDirectory($src, $dst, $io)
