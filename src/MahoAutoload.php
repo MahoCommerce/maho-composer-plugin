@@ -7,6 +7,7 @@ use Composer\InstalledVersions;
 class MahoAutoload
 {
     protected static $modules = null;
+    protected static $canUseLocalModules = null;
     protected static $paths = null;
 
     public static function getInstalledModules(string $projectDir): array
@@ -45,12 +46,35 @@ class MahoAutoload
         return self::$modules;
     }
 
+    public static function canUseLocalModules(string $projectDir): bool
+    {
+        if (self::$canUseLocalModules !== null) {
+            return self::$canUseLocalModules;
+        }
+        self::$canUseLocalModules = true;
+
+        try {
+            $config = simplexml_load_file("$projectDir/app/etc/local.xml");
+            if ($config) {
+                $disable = $config->global->disable_local_modules;
+                if ($disable === 'true' || $disable === '1') {
+                    self::$canUseLocalModules = false;
+                }
+            }
+        } catch (Throwable) {
+        }
+
+        return self::$canUseLocalModules;
+    }
+
     public static function generatePaths(string $projectDir): array
     {
         if (self::$paths !== null) {
             return self::$paths;
         }
         self::$paths = [];
+
+        self::canUseLocalModules($projectDir);
 
         $modules = self::getInstalledModules($projectDir);
 
@@ -67,7 +91,10 @@ class MahoAutoload
             }
         };
 
-        $addIfExists($projectDir, 'app/code/local');
+        if (self::canUseLocalModules($projectDir)) {
+            $addIfExists($projectDir, 'app/code/local');
+        }
+
         $addIfExists($projectDir, 'app/code/community');
 
         if ($modules['mahocommerce/maho']['isChildProject']) {
