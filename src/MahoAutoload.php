@@ -6,9 +6,15 @@ use Composer\InstalledVersions;
 
 class MahoAutoload
 {
-    protected static $modules = null;
-    protected static $paths = null;
+    /** @var array<string, array<string, bool|string>>|null  */
+    protected static ?array $modules = null;
 
+    /** @var string[]|null  */
+    protected static ?array $paths = null;
+
+    /**
+     * @return array<string, array<string, bool|string>>
+     */
     public static function getInstalledModules(string $projectDir): array
     {
         if (self::$modules !== null) {
@@ -17,7 +23,6 @@ class MahoAutoload
         self::$modules = [];
 
         $datasets = InstalledVersions::getAllRawData();
-
         foreach ($datasets as $dataset) {
             foreach ($dataset['versions'] as $package => $info) {
                 if (isset(self::$modules[$package])) {
@@ -45,6 +50,9 @@ class MahoAutoload
         return self::$modules;
     }
 
+    /**
+     * @return string[]
+     */
     public static function generatePaths(string $projectDir): array
     {
         if (self::$paths !== null) {
@@ -70,7 +78,7 @@ class MahoAutoload
         $addIfExists($projectDir, 'app/code/local');
         $addIfExists($projectDir, 'app/code/community');
 
-        if ($modules['mahocommerce/maho']['isChildProject']) {
+        if (isset($modules['mahocommerce/maho']) && $modules['mahocommerce/maho']['isChildProject']) {
             $addIfExists($projectDir, 'app/code/core');
             $addIfExists($projectDir, 'lib');
         }
@@ -84,7 +92,7 @@ class MahoAutoload
             }
         }
 
-        if ($modules['mahocommerce/maho']['isChildProject']) {
+        if (isset($modules['mahocommerce/maho']) && $modules['mahocommerce/maho']['isChildProject']) {
             $addIfExists($modules['mahocommerce/maho']['path'], 'app/code/core');
             $addIfExists($modules['mahocommerce/maho']['path'], 'lib');
         } else {
@@ -95,13 +103,16 @@ class MahoAutoload
         return self::$paths = array_merge(...array_values($codePools));
     }
 
+    /**
+     * @return array<string, array<int, string>>
+     */
     public static function generatePsr0(string $projectDir): array
     {
         $paths = self::generatePaths($projectDir);
 
         $prefixes = [];
         foreach ($paths as $path) {
-            foreach (glob("$path/*/*") as $file) {
+            foreach (glob("$path/*/*") ?: [] as $file) {
                 $prefix = str_replace('/', '_', substr($file, strlen($path) + 1));
                 if (is_file($file) && str_ends_with($file, '.php')) {
                     $prefix = str_replace('.php', '', $prefix);
@@ -118,13 +129,16 @@ class MahoAutoload
         return $prefixes;
     }
 
+    /**
+     * @return string[]
+     */
     public static function generateControllerClassMap(string $projectDir): array
     {
         $paths = self::generatePaths($projectDir);
 
         $classmaps = [];
         foreach ($paths as $path) {
-            foreach (glob("$path/*/*/controllers", GLOB_ONLYDIR) as $dir) {
+            foreach (glob("$path/*/*/controllers", GLOB_ONLYDIR) ?: [] as $dir) {
                 $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir));
                 foreach ($files as $file) {
                     if (!$file->isFile() || !str_ends_with($file->getFileName(), 'Controller.php')) {
