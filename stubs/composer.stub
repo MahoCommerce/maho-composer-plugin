@@ -1,0 +1,11 @@
+<?php
+
+namespace Composer\Package;
+
+/**
+ * @phpstan-type AutoloadRules array{psr-0?: array<string, string[]>, psr-4?: array<string, string[]>, classmap?: list<string>, files?: list<string>, exclude-from-classmap?: list<string>}
+ * @phpstan-type DevAutoloadRules array{psr-0?: array<string, string[]>, psr-4?: array<string, string[]>, classmap?: list<string>, files?: list<string>}
+ */
+interface PackageInterface
+{
+}

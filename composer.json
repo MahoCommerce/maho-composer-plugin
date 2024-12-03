@@ -1,15 +1,27 @@
 {
     "name": "mahocommerce/maho-composer-plugin",
+    "description": "Extension for Composer to copy assets and enable autoloading for Maho projects.",
     "type": "composer-plugin",
+    "license": "MIT",
     "require": {
-        "composer-plugin-api": "^2.0"
+        "composer-plugin-api": "^2.1",
+        "composer-runtime-api": "^2"
+    },
+    "require-dev": {
+        "phpstan/phpstan": "^2.0",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "phpstan/phpstan-deprecation-rules": "^2.0",
+        "composer/composer": "^2.8"
     },
     "autoload": {
         "psr-4": {
-            "Maho\\": "src/"
+            "Maho\\ComposerPlugin\\": "src/"
         }
     },
     "extra": {
-        "class": "Maho\\MahoComposerPlugin"
+        "class": [
+            "Maho\\ComposerPlugin\\FileCopyPlugin",
+            "Maho\\ComposerPlugin\\AutoloadPlugin"
+        ]
     }
 }

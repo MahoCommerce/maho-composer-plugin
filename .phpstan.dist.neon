@@ -1,0 +1,11 @@
+includes:
+    - vendor/phpstan/phpstan/conf/bleedingEdge.neon
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - vendor/phpstan/phpstan-deprecation-rules/rules.neon
+    - vendor/composer/composer/phpstan/rules.neon
+parameters:
+    paths:
+        - src
+    stubFiles:
+        - stubs/composer.stub
+    level: 10
