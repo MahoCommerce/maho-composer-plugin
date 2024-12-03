@@ -36,7 +36,7 @@ final class AutoloadRuntime
             if (($rootDir = realpath($dataset['root']['install_path'])) === false) {
                 continue;
             }
-            $rootPackage ??= [
+            $rootPackage = [
                 'name' => $dataset['root']['name'],
                 'type' => $dataset['root']['type'],
                 'path' => $rootDir,
@@ -59,11 +59,13 @@ final class AutoloadRuntime
                     $modulePackages[$package] = $info;
                 }
             }
+            break;
         }
 
         if ($rootPackage === null) {
             return [];
         }
+
         return self::$installedPackages = [
             ...$mahoSourcePackages,
             ...$modulePackages,
