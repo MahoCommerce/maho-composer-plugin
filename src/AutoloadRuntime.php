@@ -33,10 +33,13 @@ final class AutoloadRuntime
             if ($dataset['root']['name'] === 'composer/composer') {
                 continue;
             }
+            if (($rootDir = realpath($dataset['root']['install_path'])) === false) {
+                continue;
+            }
             $rootPackage ??= [
                 'name' => $dataset['root']['name'],
                 'type' => $dataset['root']['type'],
-                'path' => realpath($dataset['root']['install_path']),
+                'path' => $rootDir,
             ];
             foreach ($dataset['versions'] as $package => $info) {
                 if (!isset($info['type']) || !isset($info['install_path'])) {
@@ -58,6 +61,9 @@ final class AutoloadRuntime
             }
         }
 
+        if ($rootPackage === null) {
+            return [];
+        }
         return self::$installedPackages = [
             ...$mahoSourcePackages,
             ...$modulePackages,
