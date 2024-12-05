@@ -45,14 +45,17 @@ final class AutoloadRuntime
                 if (!isset($info['type']) || !isset($info['install_path'])) {
                     continue;
                 }
+                if (($packageDir = realpath($info['install_path'])) === false) {
+                    continue;
+                }
+                if (($symlinkDir = realpath("$rootDir/vendor/mahocommerce/maho-modman-symlinks/$package")) !== false) {
+                    $packageDir = $symlinkDir;
+                }
                 $info = [
                     'name' => $package,
                     'type' => $info['type'],
-                    'path' => realpath($info['install_path']),
+                    'path' => $packageDir,
                 ];
-                if ($info['path'] === false) {
-                    continue;
-                }
                 if ($info['type'] === 'maho-source') {
                     $mahoSourcePackages[$package] = $info;
                 } elseif (in_array($info['type'], ['maho-module', 'magento-module'], true)) {

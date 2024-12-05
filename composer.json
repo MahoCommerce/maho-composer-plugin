@@ -20,8 +20,9 @@
     },
     "extra": {
         "class": [
+            "Maho\\ComposerPlugin\\AutoloadPlugin",
             "Maho\\ComposerPlugin\\FileCopyPlugin",
-            "Maho\\ComposerPlugin\\AutoloadPlugin"
+            "Maho\\ComposerPlugin\\ModmanPlugin"
         ]
     }
 }

@@ -12,19 +12,19 @@ use Composer\Script\ScriptEvents;
 
 final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
 {
+    private Composer $composer;
+
     public function activate(Composer $composer, IOInterface $io)
     {
-        // This method is called when the plugin is activated
+        $this->composer = $composer;
     }
 
     public function deactivate(Composer $composer, IOInterface $io)
     {
-        // This method is called when the plugin is deactivated
     }
 
     public function uninstall(Composer $composer, IOInterface $io)
     {
-        // This method is called when the plugin is uninstalled
     }
 
     public static function getSubscribedEvents()
@@ -36,9 +36,8 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
 
     public function onPreAutoloadDumpCmd(Event $event): void
     {
-        $composer = $event->getComposer();
         /** @var RootPackage */
-        $rootPackage = $composer->getPackage();
+        $rootPackage = $this->composer->getPackage();
         $autoloadDefinition = $rootPackage->getAutoload();
 
         $includePaths = AutoloadRuntime::generateIncludePaths();
