@@ -73,7 +73,7 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
 
     private function getSymlinkDir(PackageInterface $package): string
     {
-        return $this->filesystem->normalizePath(__DIR__ . '/../../maho-modman-symlinks/' . $package->getName());
+        return $this->composer->getConfig()->get('vendor-dir') . '/maho-modman-symlinks/' . $package->getName();
     }
 
     private function undeploy(PackageInterface $package): void
