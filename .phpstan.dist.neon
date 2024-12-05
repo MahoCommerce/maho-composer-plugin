@@ -4,6 +4,9 @@ includes:
     - vendor/phpstan/phpstan-deprecation-rules/rules.neon
     - vendor/composer/composer/phpstan/rules.neon
 parameters:
+    phpVersion:
+        min: 80200
+        max: 80400
     paths:
         - src
     stubFiles:
