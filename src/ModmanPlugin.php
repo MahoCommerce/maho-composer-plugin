@@ -47,6 +47,7 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
     {
         /** @var Operation\InstallOperation */
         $operation = $event->getOperation();
+        $this->undeploy($operation->getPackage());
         $this->deploy($operation->getPackage());
     }
 
@@ -54,6 +55,7 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
     {
         /** @var Operation\UpdateOperation */
         $operation = $event->getOperation();
+        $this->undeploy($operation->getTargetPackage());
         $this->deploy($operation->getTargetPackage());
     }
 
@@ -64,6 +66,11 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
         $this->undeploy($operation->getPackage());
     }
 
+    private function isMahoModule(PackageInterface $package): bool
+    {
+        return in_array($package->getType(), ['maho-module', 'magento-module'], true);
+    }
+
     private function getSymlinkDir(PackageInterface $package): string
     {
         return $this->filesystem->normalizePath(__DIR__ . '/../../maho-modman-symlinks/' . $package->getName());
@@ -71,6 +78,9 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
 
     private function undeploy(PackageInterface $package): void
     {
+        if (!$this->isMahoModule($package)) {
+            return;
+        }
         $this->filesystem->removeDirectory($this->getSymlinkDir($package));
     }
 
@@ -79,8 +89,9 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
         $packageDir = $this->composer->getInstallationManager()->getInstallPath($package);
         $symlinkDir = $this->getSymlinkDir($package);
 
-        // Remove any existing symlinks first
-        $this->undeploy($package);
+        if ($packageDir === null || !$this->isMahoModule($package)) {
+            return;
+        }
 
         // Parse modman file if exists
         $map = $this->parseModman($packageDir);
@@ -106,10 +117,11 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
                     continue;
                 }
                 foreach ($files as $file) {
-                    $symlinks[] = [$file, "$symlinkDir/$target/" . basename($file)];
+                    $file = $this->filesystem->findShortestPath($packageDir, $file);
+                    $symlinks[] = [$file, "$target/" . basename($file)];
                 }
             } elseif ($this->filesystem::isReadable("$packageDir/$source")) {
-                $symlinks[] = ["$packageDir/$source", "$symlinkDir/$target"];
+                $symlinks[] = [$source, $target];
             }
         }
 
@@ -130,6 +142,10 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
 
         $created = [];
         foreach ($symlinks as [$source, $target]) {
+            // Build full paths
+            $source = "$packageDir/$source";
+            $target = "$symlinkDir/$target";
+
             // Ensure target hasn't already been created or is in a child directory of another symlink
             $conflicts = array_filter($created, fn ($link) => str_starts_with($target, $link));
             if (count($conflicts) > 0) {
