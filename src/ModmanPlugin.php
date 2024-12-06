@@ -13,6 +13,10 @@ use Composer\Installer\PackageEvents;
 use Composer\Util\Filesystem;
 use Composer\Util\Platform;
 
+/**
+ * Composer plugin to parse modman files and create symlinks in the way Maho expects modules to be structured.
+ * Symlinks will be created at vendor/mahocommerce/maho-modman-symlinks/$packageName and will not pollute the project's tree.
+ */
 final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
 {
     private IOInterface $io;

@@ -5,6 +5,11 @@ namespace Maho\ComposerPlugin;
 use Composer\InstalledVersions;
 
 /**
+ * This class handles finding packages and the actual building of include paths, PSR-0 prefixes, classmaps, etc
+ *
+ * It is separate from AutoloadPlugin since the main Maho repo also calls its methods during runtime where we don't have
+ * the composer/composer package installed, thus referencing classes like Composer\Plugin\PluginInterface would fail.
+ *
  * @phpstan-type Package array{name: string, type: string, path: string}
  * @phpstan-type PackageArray array<string, Package>
  */
@@ -17,6 +22,10 @@ final class AutoloadRuntime
     private static ?array $includePaths = null;
 
     /**
+     * Return an array of packages installed by Composer with a package type of maho-source, maho-module, or magento-module.
+     *
+     * Array will include maho-source packages first, then modules A-Z, then the root package last.
+     *
      * @return PackageArray
      */
     public static function getInstalledPackages(): array
@@ -77,7 +86,12 @@ final class AutoloadRuntime
     }
 
     /**
-     * @return list<string>
+     * Search for files in Maho and module packages with a glob pattern.
+     *
+     * @param $pattern A glob pattern to search for, i.e. /app/etc/modules/*.xml
+     * @param $flags Any of the GLOB_* constants
+     * @see https://www.php.net/manual/en/filesystem.constants.php#constant.glob-available-flags
+     * @return list<string> An array of absolute filenames matching the pattern
      */
     public static function globPackages(string $pattern, int $flags = 0): array
     {
@@ -96,6 +110,11 @@ final class AutoloadRuntime
     }
 
     /**
+     * Generate a list of include paths for backwards compatibility with OpenMage / Magento 1.9.
+     *
+     * Paths will include the root package first, then modules Z-A, then maho-source packages last.
+     * This is intentionally the reverse order of getInstalledPackages() so local files are matched first.
+     *
      * @return list<string>
      */
     public static function generateIncludePaths(): array
@@ -136,6 +155,15 @@ final class AutoloadRuntime
     }
 
     /**
+     * Scan code pools to build PSR-0 mapping to provide to Composer's autoloader.
+     *
+     * Example: [
+     *     "Mage_Core_" => ["vendor/mahocommerce/maho/app/code/core"],
+     *     "Mage_Customer_" => ["app/code/local", "vendor/mahocommerce/maho/app/code/core"],
+     *     "Zend_" => ["vendor/shardj/zf1-future/library"],
+     *     // ...
+     * ];
+     *
      * @return array<string, list<string>>
      */
     public static function generatePsr0(): array
@@ -166,6 +194,8 @@ final class AutoloadRuntime
     }
 
     /**
+     * Build a class map for files that do not follow PSR-0 or PSR-4 standards, such as controllers and app/Mage.php.
+     *
      * @return array<string, string>
      */
     public static function generateClassMap(): array
@@ -185,7 +215,7 @@ final class AutoloadRuntime
         }
 
         foreach (self::globPackages('/app/code/*/*/*', GLOB_ONLYDIR) as $moduleDir) {
-
+            // Get the prefix of the class names in this file, i.e. Mage_Adminhtml
             $modulePrefix = implode('_', array_slice(explode('/', $moduleDir), -2));
 
             $controllersDir = "$moduleDir/controllers";
@@ -208,6 +238,8 @@ final class AutoloadRuntime
     }
 
     /**
+     * Scan for files that can't be autoloaded, such as functions.php, bootstrap.php, and any app/etc/includes/*.php file.
+     *
      * @return list<string>
      */
     public static function generateIncludeFiles(): array
