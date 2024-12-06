@@ -42,6 +42,8 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
         /** @var RootPackage */
         $rootPackage = $this->composer->getPackage();
         $rootDir = dirname($this->composer->getConfig()->get('vendor-dir'));
+
+        /** @var array{psr-0?: array<string, string[]>, psr-4?: array<string, string[]>, classmap?: list<string>, files?: list<string>, exclude-from-classmap?: list<string>} */
         $autoloadDefinition = $rootPackage->getAutoload();
 
         $includePaths = AutoloadRuntime::generateIncludePaths();

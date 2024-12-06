@@ -9,6 +9,4 @@ parameters:
         max: 80400
     paths:
         - src
-    stubFiles:
-        - stubs/composer.stub
     level: 10
