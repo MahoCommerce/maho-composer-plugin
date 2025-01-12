@@ -1,0 +1,65 @@
+name: PHP Syntax
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  syntax_php:
+    name: PHP Syntax ${{ matrix.php-versions }}
+    runs-on: [ubuntu-latest]
+
+    strategy:
+      fail-fast: false
+      matrix:
+        php-versions: ['8.2', '8.3', '8.4']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get last successful commit
+        id: last-successful-commit
+        uses: SamhammerAG/last-successful-build-action@v7
+        with:
+          branch: main
+          workflow: ${{ github.workflow }}
+          verify: true
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v45
+        with:
+          base_sha: ${{ steps.last-successful-commit.outputs.sha }}
+          files: |
+            **/*.{php}
+            !.phpstorm.meta.php/*
+
+      - name: Setup PHP
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php-versions }}
+          ini-values: error_reporting=E_ALL, short_open_tag=Off
+          tools: none
+
+      - name: Check changed files
+        if: ${{ steps.changed-files.outputs.any_changed == 'true' }}
+        env:
+          ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+        run: |
+          set +e
+          ERROR=0
+          for FILE in ${ALL_CHANGED_FILES}; do
+              MESSAGE=$(php -l "$FILE" 2>&1 1>/dev/null)
+              if [ $? -ne 0 ]; then
+                  ERROR=255
+                  LINE=$(echo $MESSAGE | sed -En 's/.*on line ([0-9]+).*/\1/p')
+                  echo "::error file=$FILE,line=$LINE::$MESSAGE"
+              fi
+          done
+          exit $ERROR
