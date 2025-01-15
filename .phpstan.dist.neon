@@ -6,7 +6,7 @@ includes:
 parameters:
     phpVersion:
         min: 80200
-        max: 80400
+        max: 80499
     paths:
         - src
     level: 10
