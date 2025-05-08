@@ -77,7 +77,9 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
         // Copy public folders from module packages
         foreach ($mahoModules as $package) {
             $packageName = $package->getName();
-            $packagePath = "$vendorDir/" . $packageName;
+            $packagePath = file_exists("$vendorDir/mahocommerce/maho-modman-symlinks/$packageName")
+                ? "$vendorDir/mahocommerce/maho-modman-symlinks/$packageName"
+                : "$vendorDir/$packageName";
 
             if (file_exists("$packagePath/public")) {
                 $this->copyDirectory("$packagePath/public", "$projectDir/public", $io);
