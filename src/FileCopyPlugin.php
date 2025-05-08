@@ -66,6 +66,33 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
         if (file_exists("$vendorDir/mklkj/tinymce-i18n/langs6")) {
             $this->copyDirectory("$vendorDir/mklkj/tinymce-i18n/langs6", "$projectDir/public/js/tinymce/langs", $io);
         }
+
+        // Get all maho modules
+        $localRepo = $composer->getRepositoryManager()->getLocalRepository();
+        $packages = $localRepo->getPackages();
+        $mahoModules = array_filter($packages, function($package) {
+            return in_array($package->getType(), ['magento-module', 'maho-module'], true);
+        });
+
+        // Copy public folders from module packages
+        foreach ($mahoModules as $package) {
+            $packageName = $package->getName();
+            $packagePath = file_exists("$vendorDir/mahocommerce/maho-modman-symlinks/$packageName")
+                ? "$vendorDir/mahocommerce/maho-modman-symlinks/$packageName"
+                : "$vendorDir/$packageName";
+
+            if (file_exists("$packagePath/public")) {
+                $this->copyDirectory("$packagePath/public", "$projectDir/public", $io);
+            }
+
+            if (file_exists("$packagePath/skin")) {
+                $this->copyDirectory("$packagePath/skin", "$projectDir/public/skin", $io);
+            }
+
+            if (file_exists("$packagePath/js")) {
+                $this->copyDirectory("$packagePath/js", "$projectDir/public/js", $io);
+            }
+        }
     }
 
     private function copyDirectory(string $src, string $dst, IOInterface $io): void
