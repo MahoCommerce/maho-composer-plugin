@@ -79,15 +79,6 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
             chmod('./maho', 0744);
         }
 
-        // This has to be done for all projects
-        if (file_exists("$vendorDir/tinymce/tinymce")) {
-            $this->copyDirectory("$vendorDir/tinymce/tinymce", "$projectDir/public/js/tinymce", $io);
-        }
-
-        if (file_exists("$vendorDir/mklkj/tinymce-i18n/langs6")) {
-            $this->copyDirectory("$vendorDir/mklkj/tinymce-i18n/langs6", "$projectDir/public/js/tinymce/langs", $io);
-        }
-
         // Get all maho modules
         $localRepo = $composer->getRepositoryManager()->getLocalRepository();
         $packages = $localRepo->getPackages();
