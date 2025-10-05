@@ -13,6 +13,11 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
 {
     private static bool $hasRun = false;
 
+    /** @var array<string> */
+    private array $preserveFiles = [];
+
+    private string $projectDir = '';
+
     public function activate(Composer $composer, IOInterface $io)
     {
         // This method is called when the plugin is activated
@@ -50,6 +55,22 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
         /** @var string */
         $vendorDir = $composer->getConfig()->get('vendor-dir');
         $projectDir = getcwd();
+        if ($projectDir === false) {
+            throw new \RuntimeException('Unable to determine current working directory');
+        }
+        $this->projectDir = $projectDir;
+
+        // Get preserve-files configuration
+        $extra = $composer->getPackage()->getExtra();
+        if (isset($extra['maho']) && is_array($extra['maho']) && isset($extra['maho']['preserve-files']) && is_array($extra['maho']['preserve-files'])) {
+            // Validate that all entries are strings
+            $preserveFilesCandidate = $extra['maho']['preserve-files'];
+            foreach ($preserveFilesCandidate as $file) {
+                if (is_string($file)) {
+                    $this->preserveFiles[] = $file;
+                }
+            }
+        }
 
         // This has to be done for child projects, the ones using maho as a dependency
         if (file_exists("$vendorDir/mahocommerce/maho")) {
@@ -109,10 +130,21 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
         @mkdir($dst, 0777, true);
         while (false !== ($file = readdir($dir))) {
             if (($file !== '.') && ($file !== '..')) {
-                if (is_dir($src . '/' . $file)) {
-                    $this->copyDirectory($src . '/' . $file, $dst . '/' . $file, $io);
+                $srcPath = $src . '/' . $file;
+                $dstPath = $dst . '/' . $file;
+
+                if (is_dir($srcPath)) {
+                    $this->copyDirectory($srcPath, $dstPath, $io);
                 } else {
-                    copy($src . '/' . $file, $dst . '/' . $file);
+                    // Check if this file should be preserved
+                    $relativePath = str_replace($this->projectDir . '/', '', $dstPath);
+                    $shouldPreserve = in_array($relativePath, $this->preserveFiles, true) && file_exists($dstPath);
+
+                    if ($shouldPreserve) {
+                        $io->write("  - Skipping preserved file: $relativePath", true, IOInterface::VERBOSE);
+                    } else {
+                        copy($srcPath, $dstPath);
+                    }
                 }
             }
         }
