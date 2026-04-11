@@ -2,18 +2,18 @@
 
 namespace Maho\ComposerPlugin;
 
+use Composer\ClassMapGenerator\ClassMapGenerator;
+use Composer\IO\IOInterface;
 use Maho\Attributes\CronJob;
 use Maho\Attributes\Observer;
 use ReflectionClass;
 use ReflectionMethod;
 
-class AttributeCompiler
+final class AttributeCompiler
 {
-    private const SCAN_PATTERNS = [
-        '/app/code/*/*/*/Model/*.php',
-        '/app/code/*/*/*/Helper/*.php',
-        '/app/code/*/*/*/Block/*.php',
-    ];
+    private const SCAN_DIRS = ['Model', 'Helper', 'Block'];
+
+    private const ALLOWED_AREAS = ['global', 'frontend', 'adminhtml'];
 
     /**
      * @var array{
@@ -29,7 +29,7 @@ class AttributeCompiler
      *
      * @param string $outputDir Directory where attributes.php will be written
      */
-    public static function compile(string $outputDir): void
+    public static function compile(string $outputDir, IOInterface $io): void
     {
         self::$data = [
             'observers' => [
@@ -42,18 +42,13 @@ class AttributeCompiler
 
         $replaces = [];
 
-        foreach (self::scanFiles() as $file) {
-            $contents = file_get_contents($file);
+        foreach (self::scanClasses() as $className => $filePath) {
+            $contents = file_get_contents($filePath);
             if ($contents === false) {
                 continue;
             }
 
             if (strpos($contents, 'Maho\Attributes\Observer') === false && strpos($contents, 'Maho\Attributes\CronJob') === false) {
-                continue;
-            }
-
-            $className = self::extractClassName($contents);
-            if ($className === null) {
                 continue;
             }
 
@@ -72,8 +67,8 @@ class AttributeCompiler
                     continue;
                 }
 
-                self::processObserverAttributes($method, $className, $replaces);
-                self::processCronJobAttributes($method, $className);
+                self::processObserverAttributes($method, $className, $replaces, $io);
+                self::processCronJobAttributes($method, $className, $io);
             }
         }
 
@@ -82,30 +77,24 @@ class AttributeCompiler
     }
 
     /**
-     * @return list<string>
+     * Scan all module directories for PHP classes using Composer's ClassMapGenerator.
+     *
+     * @return array<class-string, string>
      */
-    private static function scanFiles(): array
+    private static function scanClasses(): array
     {
-        $files = [];
-        foreach (self::SCAN_PATTERNS as $pattern) {
-            array_push($files, ...AutoloadRuntime::globPackages($pattern));
-        }
-        return array_values(array_unique($files));
-    }
+        $classes = [];
 
-    private static function extractClassName(string $contents): ?string
-    {
-        if (preg_match('/^(?:final\s+|readonly\s+|abstract\s+)*class\s+(\w+)/m', $contents, $classMatch) !== 1) {
-            return null;
+        foreach (AutoloadRuntime::globPackages('/app/code/*/*/*', GLOB_ONLYDIR) as $moduleDir) {
+            foreach (self::SCAN_DIRS as $subDir) {
+                $dir = $moduleDir . '/' . $subDir;
+                if (is_dir($dir)) {
+                    $classes += ClassMapGenerator::createMap($dir);
+                }
+            }
         }
 
-        $className = $classMatch[1];
-
-        if (preg_match('/^namespace\s+([^\s;]+)/m', $contents, $nsMatch) === 1) {
-            $className = $nsMatch[1] . '\\' . $className;
-        }
-
-        return $className;
+        return $classes;
     }
 
     /**
@@ -115,10 +104,22 @@ class AttributeCompiler
         ReflectionMethod $method,
         string $className,
         array &$replaces,
+        IOInterface $io,
     ): void {
         $attributes = $method->getAttributes(Observer::class);
         foreach ($attributes as $attribute) {
-            $observer = $attribute->newInstance();
+            try {
+                $observer = $attribute->newInstance();
+            } catch (\Throwable $e) {
+                $io->writeError(sprintf(
+                    '  <warning>Skipping Observer attribute on %s::%s: %s</warning>',
+                    $className,
+                    $method->getName(),
+                    $e->getMessage(),
+                ));
+                continue;
+            }
+
             $name = $observer->name ?? $className . '::' . $method->getName();
             $areas = array_map('trim', explode(',', $observer->area));
             $event = strtolower($observer->event);
@@ -133,6 +134,16 @@ class AttributeCompiler
             ];
 
             foreach ($areas as $area) {
+                if (!in_array($area, self::ALLOWED_AREAS, true)) {
+                    $io->writeError(sprintf(
+                        '  <warning>Invalid observer area "%s" on %s::%s, skipping</warning>',
+                        $area,
+                        $className,
+                        $method->getName(),
+                    ));
+                    continue;
+                }
+
                 self::$data['observers'][$area][$event] ??= [];
                 self::$data['observers'][$area][$event][] = $entry;
 
@@ -150,10 +161,22 @@ class AttributeCompiler
     private static function processCronJobAttributes(
         ReflectionMethod $method,
         string $className,
+        IOInterface $io,
     ): void {
         $attributes = $method->getAttributes(CronJob::class);
         foreach ($attributes as $attribute) {
-            $cronJob = $attribute->newInstance();
+            try {
+                $cronJob = $attribute->newInstance();
+            } catch (\Throwable $e) {
+                $io->writeError(sprintf(
+                    '  <warning>Skipping CronJob attribute on %s::%s: %s</warning>',
+                    $className,
+                    $method->getName(),
+                    $e->getMessage(),
+                ));
+                continue;
+            }
+
             $name = $cronJob->name ?? self::generateCronJobName($className, $method->getName());
 
             self::$data['crontab'][$name] = [
@@ -167,11 +190,28 @@ class AttributeCompiler
 
     private static function generateCronJobName(string $className, string $methodName): string
     {
-        $prefix = (string) preg_replace('/^Mage_/', '', $className);
-        $prefix = (string) preg_replace('/_Model_/', '_', $prefix);
-        $prefix = strtolower((string) preg_replace('/([a-z])([A-Z])/', '$1_$2', $prefix));
-        $method = strtolower((string) preg_replace('/([a-z])([A-Z])/', '$1_$2', $methodName));
+        $prefix = $className;
+        if (str_starts_with($prefix, 'Mage_')) {
+            $prefix = substr($prefix, 5);
+        }
+        $prefix = str_replace('_Model_', '_', $prefix);
+        $prefix = strtolower(self::camelToSnake($prefix));
+        $method = strtolower(self::camelToSnake($methodName));
         return $prefix . '_' . $method;
+    }
+
+    private static function camelToSnake(string $input): string
+    {
+        $result = '';
+        $length = strlen($input);
+        for ($i = 0; $i < $length; $i++) {
+            $char = $input[$i];
+            if ($i > 0 && ctype_upper($char) && ctype_lower($input[$i - 1])) {
+                $result .= '_';
+            }
+            $result .= $char;
+        }
+        return $result;
     }
 
     /**
@@ -218,15 +258,21 @@ class AttributeCompiler
 
     private static function extractModuleName(string $className): string
     {
-        // Mage_Wishlist_Model_Observer → Mage_Wishlist
-        // Mage_CatalogInventory_Model_Observer → Mage_CatalogInventory
-        if (preg_match('/^(Mage_[A-Za-z]+)_/', $className, $matches) === 1) {
-            return $matches[1];
+        // Namespace-style: Maho\SomeModule\..., Vendor\Module\... → first two segments
+        if (str_contains($className, '\\')) {
+            $parts = explode('\\', $className);
+            if (count($parts) >= 2) {
+                return $parts[0] . '\\' . $parts[1];
+            }
+            return $className;
         }
-        // Maho\SomeModule\... → derive from namespace
-        if (preg_match('/^(Maho\\\\[A-Za-z]+)\\\\/', $className, $matches) === 1) {
-            return $matches[1];
+
+        // Underscore-style: Mage_Wishlist_Model_Observer, Vendor_Module_... → first two segments
+        $parts = explode('_', $className);
+        if (count($parts) >= 2) {
+            return $parts[0] . '_' . $parts[1];
         }
+
         return $className;
     }
 
