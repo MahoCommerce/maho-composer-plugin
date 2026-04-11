@@ -76,7 +76,13 @@ final class AttributeCompiler
     }
 
     /**
-     * Scan all module directories for PHP classes using Composer's ClassMapGenerator.
+     * Scan module directories for PHP classes using Composer's ClassMapGenerator.
+     *
+     * Only scans app/code/{pool}/{Namespace}/{Module}/ directories.
+     * Classes in lib/ or other non-standard locations are not included.
+     *
+     * Later packages overwrite earlier ones so that local code pool
+     * overrides take precedence over core/community classes.
      *
      * @return array<class-string, string>
      */
@@ -85,7 +91,9 @@ final class AttributeCompiler
         $classes = [];
 
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/*', GLOB_ONLYDIR) as $moduleDir) {
-            $classes += ClassMapGenerator::createMap($moduleDir);
+            foreach (ClassMapGenerator::createMap($moduleDir) as $class => $file) {
+                $classes[$class] = $file;
+            }
         }
 
         return $classes;
@@ -139,6 +147,19 @@ final class AttributeCompiler
                 }
 
                 self::$data['observers'][$area][$event] ??= [];
+
+                foreach (self::$data['observers'][$area][$event] as $existing) {
+                    if ($existing['name'] === $name) {
+                        $io->writeError(sprintf(
+                            '  <warning>Duplicate observer name "%s" on %s/%s</warning>',
+                            $name,
+                            $area,
+                            $event,
+                        ));
+                        break;
+                    }
+                }
+
                 self::$data['observers'][$area][$event][] = $entry;
 
                 if ($observer->replaces !== null) {
@@ -181,6 +202,17 @@ final class AttributeCompiler
             }
 
             $name = $cronJob->name ?? self::generateCronJobName($className, $method->getName());
+
+            if (isset(self::$data['crontab'][$name])) {
+                $io->writeError(sprintf(
+                    '  <warning>CronJob name "%s" on %s::%s overwrites %s::%s</warning>',
+                    $name,
+                    $className,
+                    $method->getName(),
+                    self::$data['crontab'][$name]['class'],
+                    self::$data['crontab'][$name]['method'],
+                ));
+            }
 
             self::$data['crontab'][$name] = [
                 'class' => $className,

@@ -117,7 +117,9 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
     {
         $rootDir = dirname($this->composer->getConfig()->get('vendor-dir'));
 
-        // Require the fresh autoloader so all classes are available for reflection
+        // Load the freshly-generated autoloader so that module classes are available
+        // for reflection during attribute compilation. This runs in POST_AUTOLOAD_DUMP,
+        // after Composer has finished writing the autoloader, so re-registration is safe.
         require_once $rootDir . '/vendor/autoload.php';
 
         if (!class_exists(\Maho\Attributes\Observer::class)) {
