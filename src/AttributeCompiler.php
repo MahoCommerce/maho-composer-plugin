@@ -16,13 +16,22 @@ class AttributeCompiler
     ];
 
     /**
+     * @var array{
+     *     observers: array<string, array<string, list<array{name: string, module: string, class: string, method: string, type: string, args: array<string, mixed>}>>>,
+     *     crontab: array<string, array{class: string, method: string, schedule: ?string, config_path: ?string}>,
+     *     replaces?: list<array{target: string, area: string, event: string}>
+     * }
+     */
+    private static array $data;
+
+    /**
      * Compile PHP attributes into a cached array file.
      *
      * @param string $outputDir Directory where attributes.php will be written
      */
     public static function compile(string $outputDir): void
     {
-        $data = [
+        self::$data = [
             'observers' => [
                 'global' => [],
                 'frontend' => [],
@@ -63,13 +72,13 @@ class AttributeCompiler
                     continue;
                 }
 
-                self::processObserverAttributes($method, $className, $data, $replaces);
-                self::processCronJobAttributes($method, $className, $data);
+                self::processObserverAttributes($method, $className, $replaces);
+                self::processCronJobAttributes($method, $className);
             }
         }
 
-        self::applyReplaces($data, $replaces);
-        self::writeOutput($outputDir, $data);
+        self::applyReplaces($replaces);
+        self::writeOutput($outputDir);
     }
 
     /**
@@ -86,13 +95,13 @@ class AttributeCompiler
 
     private static function extractClassName(string $contents): ?string
     {
-        if (!preg_match('/^class\s+(\w+)/m', $contents, $classMatch)) {
+        if (preg_match('/^(?:final\s+|readonly\s+|abstract\s+)*class\s+(\w+)/m', $contents, $classMatch) !== 1) {
             return null;
         }
 
         $className = $classMatch[1];
 
-        if (preg_match('/^namespace\s+([^\s;]+)/m', $contents, $nsMatch)) {
+        if (preg_match('/^namespace\s+([^\s;]+)/m', $contents, $nsMatch) === 1) {
             $className = $nsMatch[1] . '\\' . $className;
         }
 
@@ -100,13 +109,11 @@ class AttributeCompiler
     }
 
     /**
-     * @param array<string, array<string, array<string, list<array<string, mixed>>>>> $data
      * @param list<array{target: string, area: string, event: string}> $replaces
      */
     private static function processObserverAttributes(
         ReflectionMethod $method,
         string $className,
-        array &$data,
         array &$replaces,
     ): void {
         $attributes = $method->getAttributes(Observer::class);
@@ -126,8 +133,8 @@ class AttributeCompiler
             ];
 
             foreach ($areas as $area) {
-                $data['observers'][$area][$event] ??= [];
-                $data['observers'][$area][$event][] = $entry;
+                self::$data['observers'][$area][$event] ??= [];
+                self::$data['observers'][$area][$event][] = $entry;
 
                 if ($observer->replaces !== null) {
                     $replaces[] = [
@@ -143,14 +150,13 @@ class AttributeCompiler
     private static function processCronJobAttributes(
         ReflectionMethod $method,
         string $className,
-        array &$data,
     ): void {
         $attributes = $method->getAttributes(CronJob::class);
         foreach ($attributes as $attribute) {
             $cronJob = $attribute->newInstance();
             $name = $cronJob->name ?? self::generateCronJobName($className, $method->getName());
 
-            $data['crontab'][$name] = [
+            self::$data['crontab'][$name] = [
                 'class' => $className,
                 'method' => $method->getName(),
                 'schedule' => $cronJob->schedule,
@@ -161,10 +167,10 @@ class AttributeCompiler
 
     private static function generateCronJobName(string $className, string $methodName): string
     {
-        $prefix = preg_replace('/^Mage_/', '', $className);
-        $prefix = preg_replace('/_Model_/', '_', $prefix);
-        $prefix = strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $prefix));
-        $method = strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $methodName));
+        $prefix = (string) preg_replace('/^Mage_/', '', $className);
+        $prefix = (string) preg_replace('/_Model_/', '_', $prefix);
+        $prefix = strtolower((string) preg_replace('/([a-z])([A-Z])/', '$1_$2', $prefix));
+        $method = strtolower((string) preg_replace('/([a-z])([A-Z])/', '$1_$2', $methodName));
         return $prefix . '_' . $method;
     }
 
@@ -173,8 +179,10 @@ class AttributeCompiler
      *
      * Only resolves attribute→attribute replaces at compile time.
      * Attribute→XML replaces are stored in the compiled output and resolved at runtime.
+     *
+     * @param list<array{target: string, area: string, event: string}> $replaces
      */
-    private static function applyReplaces(array &$data, array $replaces): void
+    private static function applyReplaces(array $replaces): void
     {
         $unresolvedReplaces = [];
 
@@ -184,15 +192,17 @@ class AttributeCompiler
             $event = $replace['event'];
             $target = $replace['target'];
 
-            if (isset($data['observers'][$area][$event])) {
-                foreach ($data['observers'][$area][$event] as $key => $observer) {
-                    if ($observer['name'] === $target) {
-                        unset($data['observers'][$area][$event][$key]);
-                        $data['observers'][$area][$event] = array_values($data['observers'][$area][$event]);
-                        $resolved = true;
-                        break;
-                    }
-                }
+            if (isset(self::$data['observers'][$area][$event])) {
+                $observers = self::$data['observers'][$area][$event];
+                $countBefore = count($observers);
+                $observers = array_values(
+                    array_filter(
+                        $observers,
+                        static fn (array $observer): bool => $observer['name'] !== $target,
+                    ),
+                );
+                self::$data['observers'][$area][$event] = $observers;
+                $resolved = count($observers) < $countBefore;
             }
 
             if (!$resolved) {
@@ -201,8 +211,8 @@ class AttributeCompiler
         }
 
         // Store unresolved replaces for runtime resolution against XML observers
-        if ($unresolvedReplaces) {
-            $data['replaces'] = $unresolvedReplaces;
+        if ($unresolvedReplaces !== []) {
+            self::$data['replaces'] = $unresolvedReplaces;
         }
     }
 
@@ -210,23 +220,23 @@ class AttributeCompiler
     {
         // Mage_Wishlist_Model_Observer → Mage_Wishlist
         // Mage_CatalogInventory_Model_Observer → Mage_CatalogInventory
-        if (preg_match('/^(Mage_[A-Za-z]+)_/', $className, $matches)) {
+        if (preg_match('/^(Mage_[A-Za-z]+)_/', $className, $matches) === 1) {
             return $matches[1];
         }
         // Maho\SomeModule\... → derive from namespace
-        if (preg_match('/^(Maho\\\\[A-Za-z]+)\\\\/', $className, $matches)) {
+        if (preg_match('/^(Maho\\\\[A-Za-z]+)\\\\/', $className, $matches) === 1) {
             return $matches[1];
         }
         return $className;
     }
 
-    private static function writeOutput(string $outputDir, array $data): void
+    private static function writeOutput(string $outputDir): void
     {
         if (!is_dir($outputDir)) {
             mkdir($outputDir, 0755, true);
         }
 
-        $content = '<?php return ' . var_export($data, true) . ";\n";
+        $content = '<?php return ' . var_export(self::$data, true) . ";\n";
         file_put_contents($outputDir . '/attributes.php', $content);
     }
 }
