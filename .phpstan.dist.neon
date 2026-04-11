@@ -10,3 +10,5 @@ parameters:
     paths:
         - src
     level: 10
+    scanFiles:
+        - stubs/MahoAttributes.stub

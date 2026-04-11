@@ -66,6 +66,7 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
     {
         return [
             ScriptEvents::PRE_AUTOLOAD_DUMP => 'onPreAutoloadDumpCmd',
+            ScriptEvents::POST_AUTOLOAD_DUMP => 'onPostAutoloadDumpCmd',
         ];
     }
 
@@ -110,5 +111,24 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
 
         $rootPackage->setAutoload($autoloadDefinition);
         $rootPackage->setIncludePaths([...$includePaths, ...$rootPackage->getIncludePaths()]);
+    }
+
+    public function onPostAutoloadDumpCmd(Event $event): void
+    {
+        $rootDir = dirname($this->composer->getConfig()->get('vendor-dir'));
+
+        // Load the freshly-generated autoloader so that module classes are available
+        // for reflection during attribute compilation. This runs in POST_AUTOLOAD_DUMP,
+        // after Composer has finished writing the autoloader, so re-registration is safe.
+        require_once $rootDir . '/vendor/autoload.php';
+
+        if (!class_exists(\Maho\Attributes\Observer::class)) {
+            return;
+        }
+
+        $outputDir = $rootDir . '/var/compiled';
+        $event->getIO()->write('<info>Maho: Compiling PHP attributes...</info>');
+        AttributeCompiler::compile($outputDir, $event->getIO());
+        $event->getIO()->write('<info>Maho: PHP attributes compiled successfully.</info>');
     }
 }

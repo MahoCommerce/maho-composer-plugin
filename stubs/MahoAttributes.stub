@@ -1,0 +1,32 @@
+<?php
+
+// TODO: Remove these stubs once the attribute classes are merged into mahocommerce/maho
+// and the package is added as a require-dev dependency (see https://github.com/MahoCommerce/maho/issues/781)
+
+namespace Maho\Attributes;
+
+#[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
+class Observer
+{
+    public function __construct(
+        public string $event,
+        public string $area = 'global',
+        public ?string $name = null,
+        public string $type = 'singleton',
+        public ?string $replaces = null,
+        /** @var array<string, mixed> */
+        public array $args = [],
+    ) {
+    }
+}
+
+#[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
+class CronJob
+{
+    public function __construct(
+        public ?string $name = null,
+        public ?string $schedule = null,
+        public ?string $configPath = null,
+    ) {
+    }
+}
