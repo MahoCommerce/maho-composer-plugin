@@ -11,9 +11,7 @@ use ReflectionMethod;
 
 final class AttributeCompiler
 {
-    private const SCAN_DIRS = ['Model', 'Helper', 'Block'];
-
-    private const ALLOWED_AREAS = ['global', 'frontend', 'adminhtml'];
+    private const ALLOWED_AREAS = ['global', 'frontend', 'adminhtml', 'crontab'];
 
     /**
      * @var array{
@@ -36,6 +34,7 @@ final class AttributeCompiler
                 'global' => [],
                 'frontend' => [],
                 'adminhtml' => [],
+                'crontab' => [],
             ],
             'crontab' => [],
         ];
@@ -73,7 +72,7 @@ final class AttributeCompiler
         }
 
         self::applyReplaces($replaces);
-        self::writeOutput($outputDir);
+        self::writeOutput($outputDir, $io);
     }
 
     /**
@@ -86,12 +85,7 @@ final class AttributeCompiler
         $classes = [];
 
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/*', GLOB_ONLYDIR) as $moduleDir) {
-            foreach (self::SCAN_DIRS as $subDir) {
-                $dir = $moduleDir . '/' . $subDir;
-                if (is_dir($dir)) {
-                    $classes += ClassMapGenerator::createMap($dir);
-                }
-            }
+            $classes += ClassMapGenerator::createMap($moduleDir);
         }
 
         return $classes;
@@ -173,6 +167,15 @@ final class AttributeCompiler
                     $className,
                     $method->getName(),
                     $e->getMessage(),
+                ));
+                continue;
+            }
+
+            if ($cronJob->schedule === null && $cronJob->configPath === null) {
+                $io->writeError(sprintf(
+                    '  <warning>CronJob on %s::%s has neither schedule nor config_path, skipping</warning>',
+                    $className,
+                    $method->getName(),
                 ));
                 continue;
             }
@@ -276,13 +279,16 @@ final class AttributeCompiler
         return $className;
     }
 
-    private static function writeOutput(string $outputDir): void
+    private static function writeOutput(string $outputDir, IOInterface $io): void
     {
-        if (!is_dir($outputDir)) {
-            mkdir($outputDir, 0755, true);
+        if (!is_dir($outputDir) && !mkdir($outputDir, 0755, true)) {
+            $io->writeError(sprintf('  <error>Failed to create directory %s</error>', $outputDir));
+            return;
         }
 
         $content = '<?php return ' . var_export(self::$data, true) . ";\n";
-        file_put_contents($outputDir . '/attributes.php', $content);
+        if (file_put_contents($outputDir . '/attributes.php', $content) === false) {
+            $io->writeError(sprintf('  <error>Failed to write %s/attributes.php</error>', $outputDir));
+        }
     }
 }
