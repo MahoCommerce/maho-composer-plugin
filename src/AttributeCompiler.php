@@ -125,14 +125,15 @@ final class AttributeCompiler
                 continue;
             }
 
-            $name = $observer->name ?? $className . '::' . $method->getName();
+            $alias = self::resolveClassAlias($className) ?? $className;
+            $name = $observer->name ?? $alias . '::' . $method->getName();
             $areas = array_map('trim', explode(',', $observer->area));
             $event = strtolower($observer->event);
 
             $entry = [
                 'name' => $name,
                 'module' => self::extractModuleName($className),
-                'alias' => self::resolveClassAlias($className) ?? $className,
+                'alias' => $alias,
                 'method' => $method->getName(),
                 'type' => $observer->type,
                 'args' => $observer->args,
@@ -267,7 +268,7 @@ final class AttributeCompiler
                 $observers = array_values(
                     array_filter(
                         $observers,
-                        static fn (array $observer): bool => $observer['name'] !== $target,
+                        static fn (array $observer): bool => !self::observerMatchesTarget($observer, $target),
                     ),
                 );
                 self::$data['observers'][$area][$event] = $observers;
@@ -287,6 +288,31 @@ final class AttributeCompiler
             }
             self::$data['replaces'] = $indexed;
         }
+    }
+
+    /**
+     * Check if an observer matches a replaces target.
+     *
+     * Supports matching by:
+     * - Exact name (e.g. 'my_observer')
+     * - Alias format (e.g. 'catalog/observer::myMethod')
+     * - Class name format (e.g. 'Mage_Catalog_Model_Observer::myMethod')
+     */
+    private static function observerMatchesTarget(array $observer, string $target): bool
+    {
+        if ($observer['name'] === $target) {
+            return true;
+        }
+
+        // If target contains '::', try matching against alias::method and class::method
+        if (str_contains($target, '::')) {
+            $aliasBasedName = $observer['alias'] . '::' . $observer['method'];
+            if ($aliasBasedName === $target) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
