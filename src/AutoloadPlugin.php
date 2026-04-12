@@ -117,18 +117,52 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
     {
         $rootDir = dirname($this->composer->getConfig()->get('vendor-dir'));
 
-        // Load the freshly-generated autoloader so that module classes are available
-        // for reflection during attribute compilation. This runs in POST_AUTOLOAD_DUMP,
-        // after Composer has finished writing the autoloader, so re-registration is safe.
-        require_once $rootDir . '/vendor/autoload.php';
+        // Register a minimal autoloader for Maho/Mage classes only.
+        // We cannot use require vendor/autoload.php here because it would load
+        // Symfony Console classes that conflict with Composer's bundled version.
+        $includePaths = AutoloadRuntime::generateIncludePaths();
+        $packages = AutoloadRuntime::getInstalledPackages();
+        $autoloader = function (string $class) use ($rootDir, $includePaths, $packages): void {
+            // Maho namespace classes from lib/ (e.g. Maho\Attributes\Observer)
+            if (str_starts_with($class, 'Maho\\')) {
+                $relative = str_replace('\\', '/', $class) . '.php';
+                $file = $rootDir . '/lib/' . $relative;
+                if (file_exists($file)) {
+                    require_once $file;
+                    return;
+                }
+                foreach ($packages as $info) {
+                    $file = $info['path'] . '/lib/' . $relative;
+                    if (file_exists($file)) {
+                        require_once $file;
+                        return;
+                    }
+                }
+                return;
+            }
+            // PSR-0 classes (Mage_*, etc.)
+            $file = str_replace('_', '/', $class) . '.php';
+            foreach ($includePaths as $path) {
+                $fullPath = $path . '/' . $file;
+                if (file_exists($fullPath)) {
+                    require_once $fullPath;
+                    return;
+                }
+            }
+        };
+        spl_autoload_register($autoloader);
 
-        if (!class_exists(\Maho\Attributes\Observer::class)) {
-            return;
+        try {
+            if (!class_exists(\Maho\Attributes\Observer::class)) {
+                return;
+            }
+
+            $outputDir = $rootDir . '/var/compiled';
+            $event->getIO()->write('<info>Maho: Compiling PHP attributes...</info>');
+            AttributeCompiler::compile($outputDir, $event->getIO());
+            $event->getIO()->write('<info>Maho: PHP attributes compiled successfully.</info>');
+        } finally {
+            spl_autoload_unregister($autoloader);
         }
-
-        $outputDir = $rootDir . '/var/compiled';
-        $event->getIO()->write('<info>Maho: Compiling PHP attributes...</info>');
-        AttributeCompiler::compile($outputDir, $event->getIO());
-        $event->getIO()->write('<info>Maho: PHP attributes compiled successfully.</info>');
     }
 }
