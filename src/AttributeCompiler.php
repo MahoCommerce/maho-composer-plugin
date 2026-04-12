@@ -126,7 +126,7 @@ final class AttributeCompiler
             }
 
             $alias = self::resolveClassAlias($className) ?? $className;
-            $name = $observer->name ?? $alias . '::' . $method->getName();
+            $name = $observer->id ?? $alias . '::' . $method->getName();
             $areas = array_map('trim', explode(',', $observer->area));
             $event = strtolower($observer->event);
 
@@ -197,7 +197,7 @@ final class AttributeCompiler
                 continue;
             }
 
-            $name = $cronJob->jobCode;
+            $name = $cronJob->id;
 
             if (isset(self::$data['crontab'][$name])) {
                 $io->writeError(sprintf(

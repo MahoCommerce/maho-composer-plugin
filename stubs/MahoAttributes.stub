@@ -11,8 +11,8 @@ class Observer
     public function __construct(
         public string $event,
         public string $area = 'global',
-        public ?string $name = null,
         public string $type = 'singleton',
+        public ?string $id = null,
         public ?string $replaces = null,
         /** @var array<string, mixed> */
         public array $args = [],
@@ -24,7 +24,7 @@ class Observer
 class CronJob
 {
     public function __construct(
-        public string $jobCode,
+        public string $id,
         public ?string $schedule = null,
         public ?string $configPath = null,
     ) {
