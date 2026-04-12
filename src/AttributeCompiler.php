@@ -356,7 +356,9 @@ final class AttributeCompiler
         foreach (self::$classAliasMap as $prefix => $group) {
             if (str_starts_with($className, $prefix . '_')) {
                 $suffix = substr($className, strlen($prefix) + 1);
-                return $group . '/' . strtolower($suffix);
+                $parts = explode('_', $suffix);
+                $alias = implode('_', array_map('lcfirst', $parts));
+                return $group . '/' . $alias;
             }
         }
         return null;
