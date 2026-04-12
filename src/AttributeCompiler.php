@@ -340,7 +340,7 @@ final class AttributeCompiler
                 foreach ($xml->global->{$groupType}->children() as $groupName => $groupConfig) {
                     $classPrefix = (string) $groupConfig->class;
                     if ($classPrefix !== '') {
-                        self::$classAliasMap[$classPrefix] = $groupName;
+                        self::$classAliasMap[$classPrefix] = strtolower($groupName);
                     }
                 }
             }
