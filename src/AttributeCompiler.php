@@ -11,8 +11,6 @@ use ReflectionMethod;
 
 final class AttributeCompiler
 {
-    private const ALLOWED_AREAS = ['global', 'frontend', 'adminhtml', 'crontab'];
-
     /**
      * Map of class prefix → model group alias built from config.xml files.
      * e.g. 'Mage_Newsletter_Model' => 'newsletter'
@@ -38,12 +36,7 @@ final class AttributeCompiler
     public static function compile(string $outputDir, IOInterface $io): void
     {
         self::$data = [
-            'observers' => [
-                'global' => [],
-                'frontend' => [],
-                'adminhtml' => [],
-                'crontab' => [],
-            ],
+            'observers' => [],
             'crontab' => [],
         ];
 
@@ -146,16 +139,7 @@ final class AttributeCompiler
             ];
 
             foreach ($areas as $area) {
-                if (!in_array($area, self::ALLOWED_AREAS, true)) {
-                    $io->writeError(sprintf(
-                        '  <warning>Invalid observer area "%s" on %s::%s, skipping</warning>',
-                        $area,
-                        $className,
-                        $method->getName(),
-                    ));
-                    continue;
-                }
-
+                self::$data['observers'][$area] ??= [];
                 self::$data['observers'][$area][$event] ??= [];
 
                 foreach (self::$data['observers'][$area][$event] as $existing) {
