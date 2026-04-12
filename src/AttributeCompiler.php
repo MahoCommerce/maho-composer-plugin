@@ -4,8 +4,8 @@ namespace Maho\ComposerPlugin;
 
 use Composer\ClassMapGenerator\ClassMapGenerator;
 use Composer\IO\IOInterface;
-use Maho\Attributes\CronJob;
-use Maho\Attributes\Observer;
+use Maho\Config\CronJob;
+use Maho\Config\Observer;
 use ReflectionClass;
 use ReflectionMethod;
 
@@ -57,7 +57,7 @@ final class AttributeCompiler
                 continue;
             }
 
-            if (strpos($contents, 'Maho\Attributes\Observer') === false && strpos($contents, 'Maho\Attributes\CronJob') === false) {
+            if (strpos($contents, 'Maho\Config\Observer') === false && strpos($contents, 'Maho\Config\CronJob') === false) {
                 continue;
             }
 

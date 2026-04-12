@@ -3,7 +3,7 @@
 // TODO: Remove these stubs once the attribute classes are merged into mahocommerce/maho
 // and the package is added as a require-dev dependency (see https://github.com/MahoCommerce/maho/issues/781)
 
-namespace Maho\Attributes;
+namespace Maho\Config;
 
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
 class Observer

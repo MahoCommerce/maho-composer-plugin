@@ -123,7 +123,7 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
         $includePaths = AutoloadRuntime::generateIncludePaths();
         $packages = AutoloadRuntime::getInstalledPackages();
         $autoloader = function (string $class) use ($rootDir, $includePaths, $packages): void {
-            // Maho namespace classes from lib/ (e.g. Maho\Attributes\Observer)
+            // Maho namespace classes from lib/ (e.g. Maho\Config\Observer)
             if (str_starts_with($class, 'Maho\\')) {
                 $relative = str_replace('\\', '/', $class) . '.php';
                 $file = $rootDir . '/lib/' . $relative;
@@ -153,7 +153,7 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
         spl_autoload_register($autoloader);
 
         try {
-            if (!class_exists(\Maho\Attributes\Observer::class)) {
+            if (!class_exists(\Maho\Config\Observer::class)) {
                 return;
             }
 
