@@ -307,7 +307,7 @@ final class AttributeCompiler
 
         if (str_contains($target, '::')) {
             $aliasBasedName = $observer['alias'] . '::' . $observer['method'];
-            if ($aliasBasedName === $target) {
+            if (strcasecmp($aliasBasedName, $target) === 0) {
                 return true;
             }
 
@@ -348,7 +348,7 @@ final class AttributeCompiler
     }
 
     /**
-     * Resolve a FQCN to a Maho class alias (e.g. 'Mage_Newsletter_Model_Observer' => 'newsletter/observer').
+     * Resolve a FQCN to a Maho class alias (e.g. 'Mage_Newsletter_Model_Observer' => 'newsletter/Observer').
      * Returns null if no matching alias is found.
      */
     private static function resolveClassAlias(string $className): ?string
@@ -356,7 +356,7 @@ final class AttributeCompiler
         foreach (self::$classAliasMap as $prefix => $group) {
             if (str_starts_with($className, $prefix . '_')) {
                 $suffix = substr($className, strlen($prefix) + 1);
-                return $group . '/' . strtolower($suffix);
+                return $group . '/' . $suffix;
             }
         }
         return null;
