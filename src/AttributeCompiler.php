@@ -49,7 +49,7 @@ final class AttributeCompiler
 
         $replaces = [];
 
-        self::buildClassAliasMap();
+        self::buildClassAliasMap($io);
 
         foreach (self::scanClasses() as $className => $filePath) {
             $contents = file_get_contents($filePath);
@@ -310,23 +310,19 @@ final class AttributeCompiler
      * Reads <models>, <helpers>, and <blocks> groups from each module's config.
      * e.g. 'Mage_Newsletter_Model' => 'newsletter' from <models><newsletter><class>Mage_Newsletter_Model</class>
      */
-    private static function buildClassAliasMap(): void
+    private static function buildClassAliasMap(IOInterface $io): void
     {
         self::$classAliasMap = [];
 
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/etc/config.xml') as $configFile) {
             $xml = @simplexml_load_file($configFile);
             if ($xml === false) {
+                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping alias resolution for this module</warning>', $configFile));
                 continue;
             }
 
             foreach (['models', 'helpers', 'blocks'] as $groupType) {
-                $groupNode = $xml->global?->$groupType;
-                if ($groupNode === null) {
-                    continue;
-                }
-
-                foreach ($groupNode->children() as $groupName => $groupConfig) {
+                foreach ($xml->global->{$groupType}->children() as $groupName => $groupConfig) {
                     $classPrefix = (string) $groupConfig->class;
                     if ($classPrefix !== '') {
                         self::$classAliasMap[$classPrefix] = $groupName;
