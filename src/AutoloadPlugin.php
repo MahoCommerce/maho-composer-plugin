@@ -157,7 +157,7 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
                 return;
             }
 
-            $outputDir = $rootDir . '/var/compiled';
+            $outputDir = $rootDir . '/vendor/composer';
             $event->getIO()->write('<info>Maho: Compiling PHP attributes...</info>');
             AttributeCompiler::compile($outputDir, $event->getIO());
             $event->getIO()->write('<info>Maho: PHP attributes compiled successfully.</info>');
