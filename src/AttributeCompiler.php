@@ -369,14 +369,9 @@ final class AttributeCompiler
 
     private static function writeOutput(string $outputDir, IOInterface $io): void
     {
-        if (!is_dir($outputDir) && !mkdir($outputDir, 0755, true)) {
-            $io->writeError(sprintf('  <error>Failed to create directory %s</error>', $outputDir));
-            return;
-        }
-
         $content = '<?php return ' . var_export(self::$data, true) . ";\n";
-        if (file_put_contents($outputDir . '/attributes.php', $content) === false) {
-            $io->writeError(sprintf('  <error>Failed to write %s/attributes.php</error>', $outputDir));
+        if (file_put_contents($outputDir . '/maho_attributes.php', $content) === false) {
+            $io->writeError(sprintf('  <error>Failed to write %s/maho_attributes.php</error>', $outputDir));
         }
     }
 }
