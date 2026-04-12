@@ -117,10 +117,38 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
     {
         $rootDir = dirname($this->composer->getConfig()->get('vendor-dir'));
 
-        // Load the freshly-generated autoloader so that module classes are available
-        // for reflection during attribute compilation. This runs in POST_AUTOLOAD_DUMP,
-        // after Composer has finished writing the autoloader, so re-registration is safe.
-        require_once $rootDir . '/vendor/autoload.php';
+        // Register a minimal autoloader for Maho/Mage classes only.
+        // We cannot use require vendor/autoload.php here because it would load
+        // Symfony Console classes that conflict with Composer's bundled version.
+        $includePaths = AutoloadRuntime::generateIncludePaths();
+        spl_autoload_register(function (string $class) use ($rootDir, $includePaths): void {
+            // Maho namespace classes from lib/ (e.g. Maho\Attributes\Observer)
+            if (str_starts_with($class, 'Maho\\')) {
+                $file = $rootDir . '/lib/' . str_replace('\\', '/', $class) . '.php';
+                if (file_exists($file)) {
+                    require_once $file;
+                    return;
+                }
+                // Also check packages for lib/ directories
+                foreach (AutoloadRuntime::getInstalledPackages() as $info) {
+                    $file = $info['path'] . '/lib/' . str_replace('\\', '/', $class) . '.php';
+                    if (file_exists($file)) {
+                        require_once $file;
+                        return;
+                    }
+                }
+                return;
+            }
+            // PSR-0 classes (Mage_*, etc.)
+            $file = str_replace('_', '/', $class) . '.php';
+            foreach ($includePaths as $path) {
+                $fullPath = $path . '/' . $file;
+                if (file_exists($fullPath)) {
+                    require_once $fullPath;
+                    return;
+                }
+            }
+        });
 
         if (!class_exists(\Maho\Attributes\Observer::class)) {
             return;
