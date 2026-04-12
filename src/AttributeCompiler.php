@@ -21,7 +21,7 @@ final class AttributeCompiler
 
     /**
      * @var array{
-     *     observers: array<string, array<string, list<array{name: string, module: string, alias: string, method: string, type: string, args: array<string, mixed>}>>>,
+     *     observers: array<string, array<string, list<array{name: string, module: string, class: string, alias: string, method: string, type: string, args: array<string, mixed>}>>>,
      *     crontab: array<string, array{alias: string, method: string, schedule: ?string, config_path: ?string}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>
      * }
@@ -133,6 +133,7 @@ final class AttributeCompiler
             $entry = [
                 'name' => $name,
                 'module' => self::extractModuleName($className),
+                'class' => $className,
                 'alias' => $alias,
                 'method' => $method->getName(),
                 'type' => $observer->type,
@@ -304,10 +305,14 @@ final class AttributeCompiler
             return true;
         }
 
-        // If target contains '::', try matching against alias::method and class::method
         if (str_contains($target, '::')) {
             $aliasBasedName = $observer['alias'] . '::' . $observer['method'];
             if ($aliasBasedName === $target) {
+                return true;
+            }
+
+            $classBasedName = $observer['class'] . '::' . $observer['method'];
+            if ($classBasedName === $target) {
                 return true;
             }
         }
@@ -351,7 +356,7 @@ final class AttributeCompiler
         foreach (self::$classAliasMap as $prefix => $group) {
             if (str_starts_with($className, $prefix . '_')) {
                 $suffix = substr($className, strlen($prefix) + 1);
-                return $group . '/' . $suffix;
+                return $group . '/' . strtolower($suffix);
             }
         }
         return null;
