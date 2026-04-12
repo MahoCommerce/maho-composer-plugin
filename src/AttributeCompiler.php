@@ -14,10 +14,18 @@ final class AttributeCompiler
     private const ALLOWED_AREAS = ['global', 'frontend', 'adminhtml', 'crontab'];
 
     /**
+     * Map of class prefix → model group alias built from config.xml files.
+     * e.g. 'Mage_Newsletter_Model' => 'newsletter'
+     *
+     * @var array<string, string>
+     */
+    private static array $classAliasMap = [];
+
+    /**
      * @var array{
-     *     observers: array<string, array<string, list<array{name: string, module: string, class: string, method: string, type: string, args: array<string, mixed>}>>>,
-     *     crontab: array<string, array{class: string, method: string, schedule: ?string, config_path: ?string}>,
-     *     replaces?: list<array{target: string, area: string, event: string}>
+     *     observers: array<string, array<string, list<array{name: string, module: string, alias: string, method: string, type: string, args: array<string, mixed>}>>>,
+     *     crontab: array<string, array{alias: string, method: string, schedule: ?string, config_path: ?string}>,
+     *     replaces?: array<string, array<string, list<array{target: string}>>>
      * }
      */
     private static array $data;
@@ -40,6 +48,8 @@ final class AttributeCompiler
         ];
 
         $replaces = [];
+
+        self::buildClassAliasMap($io);
 
         foreach (self::scanClasses() as $className => $filePath) {
             $contents = file_get_contents($filePath);
@@ -129,7 +139,7 @@ final class AttributeCompiler
             $entry = [
                 'name' => $name,
                 'module' => self::extractModuleName($className),
-                'class' => $className,
+                'alias' => self::resolveClassAlias($className) ?? $className,
                 'method' => $method->getName(),
                 'type' => $observer->type,
                 'args' => $observer->args,
@@ -209,13 +219,13 @@ final class AttributeCompiler
                     $name,
                     $className,
                     $method->getName(),
-                    self::$data['crontab'][$name]['class'],
+                    self::$data['crontab'][$name]['alias'],
                     self::$data['crontab'][$name]['method'],
                 ));
             }
 
             self::$data['crontab'][$name] = [
-                'class' => $className,
+                'alias' => self::resolveClassAlias($className) ?? $className,
                 'method' => $method->getName(),
                 'schedule' => $cronJob->schedule,
                 'config_path' => $cronJob->configPath,
@@ -285,10 +295,56 @@ final class AttributeCompiler
             }
         }
 
-        // Store unresolved replaces for runtime resolution against XML observers
+        // Store unresolved replaces indexed by area/event for runtime resolution against XML observers
         if ($unresolvedReplaces !== []) {
-            self::$data['replaces'] = $unresolvedReplaces;
+            $indexed = [];
+            foreach ($unresolvedReplaces as $replace) {
+                $indexed[$replace['area']][$replace['event']][] = ['target' => $replace['target']];
+            }
+            self::$data['replaces'] = $indexed;
         }
+    }
+
+    /**
+     * Build a map of class prefixes to group aliases by parsing config.xml files.
+     * Reads <models>, <helpers>, and <blocks> groups from each module's config.
+     * e.g. 'Mage_Newsletter_Model' => 'newsletter' from <models><newsletter><class>Mage_Newsletter_Model</class>
+     */
+    private static function buildClassAliasMap(IOInterface $io): void
+    {
+        self::$classAliasMap = [];
+
+        foreach (AutoloadRuntime::globPackages('/app/code/*/*/etc/config.xml') as $configFile) {
+            $xml = @simplexml_load_file($configFile);
+            if ($xml === false) {
+                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping alias resolution for this module</warning>', $configFile));
+                continue;
+            }
+
+            foreach (['models', 'helpers', 'blocks'] as $groupType) {
+                foreach ($xml->global->{$groupType}->children() as $groupName => $groupConfig) {
+                    $classPrefix = (string) $groupConfig->class;
+                    if ($classPrefix !== '') {
+                        self::$classAliasMap[$classPrefix] = $groupName;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Resolve a FQCN to a Maho class alias (e.g. 'Mage_Newsletter_Model_Observer' => 'newsletter/observer').
+     * Returns null if no matching alias is found.
+     */
+    private static function resolveClassAlias(string $className): ?string
+    {
+        foreach (self::$classAliasMap as $prefix => $group) {
+            if (str_starts_with($className, $prefix . '_')) {
+                $suffix = substr($className, strlen($prefix) + 1);
+                return $group . '/' . $suffix;
+            }
+        }
+        return null;
     }
 
     private static function extractModuleName(string $className): string
