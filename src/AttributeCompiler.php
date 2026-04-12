@@ -21,7 +21,7 @@ final class AttributeCompiler
 
     /**
      * @var array{
-     *     observers: array<string, array<string, list<array{name: string, module: string, alias: string, method: string, type: string, args: array<string, mixed>}>>>,
+     *     observers: array<string, array<string, list<array{name: string, module: string, class: string, alias: string, method: string, type: string, args: array<string, mixed>}>>>,
      *     crontab: array<string, array{alias: string, method: string, schedule: ?string, config_path: ?string}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>
      * }
@@ -125,14 +125,16 @@ final class AttributeCompiler
                 continue;
             }
 
-            $name = $observer->name ?? $className . '::' . $method->getName();
+            $alias = self::resolveClassAlias($className) ?? $className;
+            $name = $observer->name ?? $alias . '::' . $method->getName();
             $areas = array_map('trim', explode(',', $observer->area));
             $event = strtolower($observer->event);
 
             $entry = [
                 'name' => $name,
                 'module' => self::extractModuleName($className),
-                'alias' => self::resolveClassAlias($className) ?? $className,
+                'class' => $className,
+                'alias' => $alias,
                 'method' => $method->getName(),
                 'type' => $observer->type,
                 'args' => $observer->args,
@@ -267,7 +269,7 @@ final class AttributeCompiler
                 $observers = array_values(
                     array_filter(
                         $observers,
-                        static fn (array $observer): bool => $observer['name'] !== $target,
+                        static fn (array $observer): bool => !self::observerMatchesTarget($observer, $target),
                     ),
                 );
                 self::$data['observers'][$area][$event] = $observers;
@@ -290,6 +292,37 @@ final class AttributeCompiler
     }
 
     /**
+     * Check if an observer matches a replaces target.
+     *
+     * Supports matching by:
+     * - Exact name (e.g. 'my_observer')
+     * - Alias format (e.g. 'catalog/observer::myMethod')
+     * - Class name format (e.g. 'Mage_Catalog_Model_Observer::myMethod')
+     *
+     * @param array{name: string, module: string, class: string, alias: string, method: string, type: string, args: array<string, mixed>} $observer
+     */
+    private static function observerMatchesTarget(array $observer, string $target): bool
+    {
+        if ($observer['name'] === $target) {
+            return true;
+        }
+
+        if (str_contains($target, '::')) {
+            $aliasBasedName = $observer['alias'] . '::' . $observer['method'];
+            if ($aliasBasedName === $target) {
+                return true;
+            }
+
+            $classBasedName = $observer['class'] . '::' . $observer['method'];
+            if ($classBasedName === $target) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Build a map of class prefixes to group aliases by parsing config.xml files.
      * Reads <models>, <helpers>, and <blocks> groups from each module's config.
      * e.g. 'Mage_Newsletter_Model' => 'newsletter' from <models><newsletter><class>Mage_Newsletter_Model</class>
@@ -309,7 +342,7 @@ final class AttributeCompiler
                 foreach ($xml->global->{$groupType}->children() as $groupName => $groupConfig) {
                     $classPrefix = (string) $groupConfig->class;
                     if ($classPrefix !== '') {
-                        self::$classAliasMap[$classPrefix] = $groupName;
+                        self::$classAliasMap[$classPrefix] = strtolower($groupName);
                     }
                 }
             }
@@ -325,7 +358,9 @@ final class AttributeCompiler
         foreach (self::$classAliasMap as $prefix => $group) {
             if (str_starts_with($className, $prefix . '_')) {
                 $suffix = substr($className, strlen($prefix) + 1);
-                return $group . '/' . $suffix;
+                $parts = explode('_', $suffix);
+                $alias = implode('_', array_map('lcfirst', $parts));
+                return $group . '/' . $alias;
             }
         }
         return null;
