@@ -299,6 +299,9 @@ final class AttributeCompiler
      * - Alias format (e.g. 'catalog/observer::myMethod')
      * - Class name format (e.g. 'Mage_Catalog_Model_Observer::myMethod')
      */
+    /**
+     * @param array{name: string, module: string, class: string, alias: string, method: string, type: string, args: array<string, mixed>} $observer
+     */
     private static function observerMatchesTarget(array $observer, string $target): bool
     {
         if ($observer['name'] === $target) {
