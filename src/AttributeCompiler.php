@@ -306,7 +306,8 @@ final class AttributeCompiler
     }
 
     /**
-     * Build a map of model class prefixes to group aliases by parsing config.xml files.
+     * Build a map of class prefixes to group aliases by parsing config.xml files.
+     * Reads <models>, <helpers>, and <blocks> groups from each module's config.
      * e.g. 'Mage_Newsletter_Model' => 'newsletter' from <models><newsletter><class>Mage_Newsletter_Model</class>
      */
     private static function buildClassAliasMap(): void
@@ -319,15 +320,17 @@ final class AttributeCompiler
                 continue;
             }
 
-            $modelsNode = $xml->global?->models;
-            if ($modelsNode === null) {
-                continue;
-            }
+            foreach (['models', 'helpers', 'blocks'] as $groupType) {
+                $groupNode = $xml->global?->$groupType;
+                if ($groupNode === null) {
+                    continue;
+                }
 
-            foreach ($modelsNode->children() as $groupName => $groupConfig) {
-                $classPrefix = (string) $groupConfig->class;
-                if ($classPrefix !== '') {
-                    self::$classAliasMap[$classPrefix] = $groupName;
+                foreach ($groupNode->children() as $groupName => $groupConfig) {
+                    $classPrefix = (string) $groupConfig->class;
+                    if ($classPrefix !== '') {
+                        self::$classAliasMap[$classPrefix] = $groupName;
+                    }
                 }
             }
         }
@@ -342,7 +345,7 @@ final class AttributeCompiler
         foreach (self::$classAliasMap as $prefix => $group) {
             if (str_starts_with($className, $prefix . '_')) {
                 $suffix = substr($className, strlen($prefix) + 1);
-                return $group . '/' . strtolower($suffix);
+                return $group . '/' . $suffix;
             }
         }
         return null;
