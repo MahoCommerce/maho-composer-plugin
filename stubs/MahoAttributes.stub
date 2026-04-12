@@ -24,7 +24,7 @@ class Observer
 class CronJob
 {
     public function __construct(
-        public ?string $name = null,
+        public string $jobCode,
         public ?string $schedule = null,
         public ?string $configPath = null,
     ) {

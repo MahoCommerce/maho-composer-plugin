@@ -197,7 +197,7 @@ final class AttributeCompiler
                 continue;
             }
 
-            $name = $cronJob->name ?? self::generateCronJobName($className, $method->getName());
+            $name = $cronJob->jobCode;
 
             if (isset(self::$data['crontab'][$name])) {
                 $io->writeError(sprintf(
@@ -217,32 +217,6 @@ final class AttributeCompiler
                 'config_path' => $cronJob->configPath,
             ];
         }
-    }
-
-    private static function generateCronJobName(string $className, string $methodName): string
-    {
-        $prefix = $className;
-        if (str_starts_with($prefix, 'Mage_')) {
-            $prefix = substr($prefix, 5);
-        }
-        $prefix = str_replace('_Model_', '_', $prefix);
-        $prefix = strtolower(self::camelToSnake($prefix));
-        $method = strtolower(self::camelToSnake($methodName));
-        return $prefix . '_' . $method;
-    }
-
-    private static function camelToSnake(string $input): string
-    {
-        $result = '';
-        $length = strlen($input);
-        for ($i = 0; $i < $length; $i++) {
-            $char = $input[$i];
-            if ($i > 0 && ctype_upper($char) && ctype_lower($input[$i - 1])) {
-                $result .= '_';
-            }
-            $result .= $char;
-        }
-        return $result;
     }
 
     /**
