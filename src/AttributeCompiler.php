@@ -127,7 +127,7 @@ final class AttributeCompiler
 
             $alias = self::resolveClassAlias($className) ?? $className;
             $name = $observer->id ?? $alias . '::' . $method->getName();
-            $areas = array_map(static fn ($a) => ($a = trim($a)) === 'adminhtml' ? 'admin' : $a, explode(',', $observer->area));
+            $areas = array_map('trim', explode(',', $observer->area));
             $event = strtolower($observer->event);
 
             $entry = [
