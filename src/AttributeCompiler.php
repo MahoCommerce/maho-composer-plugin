@@ -142,15 +142,10 @@ final class AttributeCompiler
             }
         }
 
-        // PSR-4 classes: scan each installed maho-module/magento-module package in full.
-        // maho-source packages are skipped as their classes are already covered by
-        // the legacy code pool scan above, and scanning their root would be expensive.
+        // PSR-4 classes: scan each installed (non-root) maho/magento package in full
         $packages = AutoloadRuntime::getInstalledPackages();
         unset($packages['root']);
         foreach ($packages as $info) {
-            if ($info['type'] === 'maho-source') {
-                continue;
-            }
             foreach (ClassMapGenerator::createMap($info['path']) as $class => $file) {
                 $classes[$class] = $file;
             }
