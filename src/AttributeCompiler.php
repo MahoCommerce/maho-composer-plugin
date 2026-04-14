@@ -21,11 +21,26 @@ final class AttributeCompiler
     private static array $classAliasMap = [];
 
     /**
+     * Map of module name → frontend frontName, built from config.xml router config.
+     * e.g. 'Mage_Checkout' => 'checkout'
+     *
+     * @var array<string, string>
+     */
+    private static array $frontNameMap = [];
+
+    /** Admin area frontName (typically 'admin'), detected from config.xml. */
+    private static string $adminFrontName = 'admin';
+
+    /** Install area frontName (typically 'install'), detected from config.xml. */
+    private static string $installFrontName = 'install';
+
+    /**
      * @var array{
      *     observers: array<string, array<string, list<array{name: string, module: string, class: string, alias: string, method: string, type: string}>>>,
      *     crontab: array<string, array{alias: string, method: string, schedule: ?string, config_path: ?string}>,
-     *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string}>,
-     *     replaces?: array<string, array<string, list<array{target: string}>>>
+     *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string, pathVariables: list<string>}>,
+     *     replaces?: array<string, array<string, list<array{target: string}>>>,
+     *     reverseLookup?: array<string, string>
      * }
      */
     private static array $data;
@@ -46,6 +61,7 @@ final class AttributeCompiler
         $replaces = [];
 
         self::buildClassAliasMap($io);
+        self::buildFrontNameMap();
 
         foreach (self::scanClasses() as $className => $filePath) {
             $contents = file_get_contents($filePath);
@@ -82,6 +98,7 @@ final class AttributeCompiler
         }
 
         self::applyReplaces($replaces);
+        self::buildReverseLookup();
         self::writeOutput($outputDir, $io);
     }
 
@@ -258,6 +275,8 @@ final class AttributeCompiler
                 ));
             }
 
+            preg_match_all('/\{(\w+)\}/', $route->path, $pathVarMatches);
+
             self::$data['routes'][$name] = [
                 'path' => $route->path,
                 'class' => $className,
@@ -268,6 +287,7 @@ final class AttributeCompiler
                 'area' => $area,
                 'module' => self::extractModuleName($className),
                 'controllerName' => self::extractControllerName($className),
+                'pathVariables' => $pathVarMatches[1],
             ];
         }
     }
@@ -276,13 +296,24 @@ final class AttributeCompiler
      * Generate a route name from class and method names.
      *
      * e.g. 'Mage_Contacts_IndexController::postAction' → 'mage.contacts.index.post'
+     *      'Maho\Contacts\Controller\IndexController::postAction' → 'maho.contacts.index.post'
      */
     private static function generateRouteName(string $className, string $methodName): string
     {
         $action = (string) preg_replace('/Action$/', '', $methodName);
 
-        $classKey = str_replace(['\\', '_'], '.', $className);
-        $classKey = strtolower((string) preg_replace('/Controller$/', '', $classKey));
+        if (str_contains($className, '\\')) {
+            // PSR-4: strip 'Controller' class suffix and 'Controller' namespace segment
+            $name = (string) preg_replace('/Controller$/', '', $className);
+            $parts = array_filter(
+                explode('\\', $name),
+                static fn (string $p): bool => strtolower($p) !== 'controller',
+            );
+            $classKey = strtolower(implode('.', $parts));
+        } else {
+            // Legacy underscore-style: Mage_Contacts_IndexController → mage.contacts.index
+            $classKey = strtolower((string) preg_replace('/Controller$/', '', str_replace('_', '.', $className)));
+        }
 
         return $classKey . '.' . strtolower($action);
     }
@@ -292,10 +323,7 @@ final class AttributeCompiler
      */
     private static function detectControllerArea(string $className): string
     {
-        if (!class_exists($className)) {
-            return 'frontend';
-        }
-
+        assert(class_exists($className));
         $ref = new ReflectionClass($className);
         while ($ref !== false) {
             $name = $ref->getName();
@@ -303,6 +331,11 @@ final class AttributeCompiler
                 || $name === 'Maho\\Controller\\AdminAction'
             ) {
                 return 'adminhtml';
+            }
+            if ($name === 'Mage_Install_Controller_Action'
+                || $name === 'Maho\\Controller\\InstallAction'
+            ) {
+                return 'install';
             }
             $ref = $ref->getParentClass();
         }
@@ -415,6 +448,86 @@ final class AttributeCompiler
     }
 
     /**
+     * Build a map of module names to frontend frontNames by parsing config.xml router config.
+     *
+     * Frontend: <frontend><routers><X><args><module> + <frontName>
+     * Admin:    <admin><routers><X><args><frontName>  (shared across all admin modules)
+     * Install:  <install><routers><X><args><frontName>
+     */
+    private static function buildFrontNameMap(): void
+    {
+        self::$frontNameMap = [];
+        self::$adminFrontName = 'admin';
+        self::$installFrontName = 'install';
+
+        foreach (AutoloadRuntime::globPackages('/app/code/*/*/etc/config.xml') as $configFile) {
+            $xml = @simplexml_load_file($configFile);
+            if ($xml === false) {
+                continue;
+            }
+
+            if (isset($xml->frontend->routers)) {
+                foreach ($xml->frontend->routers->children() as $routerConfig) {
+                    $module = (string) ($routerConfig->args->module ?? '');
+                    $frontName = (string) ($routerConfig->args->frontName ?? '');
+                    if ($module !== '' && $frontName !== '') {
+                        self::$frontNameMap[$module] = $frontName;
+                    }
+                }
+            }
+
+            foreach (['admin', 'adminhtml'] as $adminArea) {
+                if (isset($xml->{$adminArea}->routers)) {
+                    foreach ($xml->{$adminArea}->routers->children() as $routerConfig) {
+                        $frontName = (string) ($routerConfig->args->frontName ?? '');
+                        if ($frontName !== '') {
+                            self::$adminFrontName = $frontName;
+                        }
+                    }
+                }
+            }
+
+            if (isset($xml->install->routers)) {
+                foreach ($xml->install->routers->children() as $routerConfig) {
+                    $frontName = (string) ($routerConfig->args->frontName ?? '');
+                    if ($frontName !== '') {
+                        self::$installFrontName = $frontName;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Build a reverse lookup map from Magento-style frontName/controller/action keys to route names.
+     * Written to $data['reverseLookup'] only when at least one route resolves successfully.
+     */
+    private static function buildReverseLookup(): void
+    {
+        $reverseLookup = [];
+
+        foreach (self::$data['routes'] as $routeName => $route) {
+            $frontName = match ($route['area']) {
+                'adminhtml' => self::$adminFrontName,
+                'install' => self::$installFrontName,
+                default => self::$frontNameMap[$route['module']] ?? null,
+            };
+
+            if ($frontName === null) {
+                continue;
+            }
+
+            $action = strtolower((string) preg_replace('/Action$/', '', $route['action']));
+            $key = $frontName . '/' . $route['controllerName'] . '/' . $action;
+            $reverseLookup[$key] = $routeName;
+        }
+
+        if ($reverseLookup !== []) {
+            self::$data['reverseLookup'] = $reverseLookup;
+        }
+    }
+
+    /**
      * Resolve a FQCN to a Maho class alias (e.g. 'Mage_Newsletter_Model_Observer' => 'newsletter/observer').
      * Returns null if no matching alias is found.
      */
@@ -434,16 +547,46 @@ final class AttributeCompiler
     /**
      * Extract the controller short name from a controller class name.
      *
-     * e.g. 'Mage_Checkout_CartController' → 'cart'
-     *      'Mage_Paygate_Authorizenet_PaymentController' → 'authorizenet_payment'
-     *      'Mage_Bundle_Adminhtml_Bundle_Product_EditController' → 'bundle_product_edit'
+     * Legacy underscore-style:
+     *   'Mage_Checkout_CartController' → 'cart'
+     *   'Mage_Paygate_Authorizenet_PaymentController' → 'authorizenet_payment'
+     *   'Mage_Bundle_Adminhtml_Bundle_Product_EditController' → 'bundle_product_edit'
+     *
+     * PSR-4 style:
+     *   'Maho\Checkout\Controller\CartController' → 'cart'
+     *   'Maho\Bundle\Controller\Adminhtml\Product\EditController' → 'product_edit'
      */
     private static function extractControllerName(string $className): string
     {
         // Remove 'Controller' suffix
         $name = (string) preg_replace('/Controller$/', '', $className);
 
-        // Get everything after the module prefix (first two segments)
+        if (str_contains($name, '\\')) {
+            // PSR-4: take all segments after 'Controller' namespace segment (skip vendor+module prefix too)
+            $parts = explode('\\', $name);
+            $controllerNsIdx = null;
+            foreach ($parts as $i => $part) {
+                if (strtolower($part) === 'controller') {
+                    $controllerNsIdx = $i;
+                    break;
+                }
+            }
+            if ($controllerNsIdx !== null) {
+                $controllerParts = array_slice($parts, $controllerNsIdx + 1);
+            } else {
+                // No 'Controller' namespace segment — take everything after vendor+module (first two)
+                $controllerParts = array_slice($parts, 2);
+            }
+            // Skip leading 'Adminhtml'/'Install' organizational segments
+            if (isset($controllerParts[0])
+                && in_array(strtolower($controllerParts[0]), ['adminhtml', 'install'], true)
+            ) {
+                array_shift($controllerParts);
+            }
+            return strtolower(implode('_', $controllerParts));
+        }
+
+        // Legacy underscore-style: get everything after the module prefix (first two segments)
         $parts = explode('_', $name);
         if (count($parts) > 2) {
             $controllerParts = array_slice($parts, 2);
