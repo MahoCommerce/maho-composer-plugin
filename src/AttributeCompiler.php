@@ -61,8 +61,7 @@ final class AttributeCompiler
 
         $replaces = [];
 
-        self::buildClassAliasMap($io);
-        self::buildFrontNameMap($io);
+        self::buildConfigMaps($io);
 
         $scannedClasses = self::scanClasses();
 
@@ -455,21 +454,32 @@ final class AttributeCompiler
     }
 
     /**
-     * Build a map of class prefixes to group aliases by parsing config.xml files.
-     * Reads <models>, <helpers>, and <blocks> groups from each module's config.
-     * e.g. 'Mage_Newsletter_Model' => 'newsletter' from <models><newsletter><class>Mage_Newsletter_Model</class>
+     * Parse all module config.xml files once and populate both the class alias map
+     * and the frontName maps in a single pass.
+     *
+     * Class aliases: <global><models|helpers|blocks><group><class> → group alias
+     * e.g. 'Mage_Newsletter_Model' => 'newsletter'
+     *
+     * Front names:
+     *   Frontend: <frontend><routers><X><args><module> + <frontName>
+     *   Admin:    <admin|adminhtml><routers><X><args><frontName>
+     *   Install:  <install><routers><X><args><frontName>
      */
-    private static function buildClassAliasMap(IOInterface $io): void
+    private static function buildConfigMaps(IOInterface $io): void
     {
         self::$classAliasMap = [];
+        self::$frontNameMap = [];
+        self::$adminFrontName = 'admin';
+        self::$installFrontName = 'install';
 
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/*/etc/config.xml') as $configFile) {
             $xml = @simplexml_load_file($configFile);
             if ($xml === false) {
-                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping alias resolution for this module</warning>', $configFile));
+                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping config maps for this module</warning>', $configFile));
                 continue;
             }
 
+            // Class alias map
             foreach (['models', 'helpers', 'blocks'] as $groupType) {
                 foreach ($xml->global->{$groupType}->children() ?? [] as $groupName => $groupConfig) {
                     $classPrefix = (string) $groupConfig->class;
@@ -478,29 +488,8 @@ final class AttributeCompiler
                     }
                 }
             }
-        }
-    }
 
-    /**
-     * Build a map of module names to frontend frontNames by parsing config.xml router config.
-     *
-     * Frontend: <frontend><routers><X><args><module> + <frontName>
-     * Admin:    <admin><routers><X><args><frontName>  (shared across all admin modules)
-     * Install:  <install><routers><X><args><frontName>
-     */
-    private static function buildFrontNameMap(IOInterface $io): void
-    {
-        self::$frontNameMap = [];
-        self::$adminFrontName = 'admin';
-        self::$installFrontName = 'install';
-
-        foreach (AutoloadRuntime::globPackages('/app/code/*/*/*/etc/config.xml') as $configFile) {
-            $xml = @simplexml_load_file($configFile);
-            if ($xml === false) {
-                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping frontName resolution for this module</warning>', $configFile));
-                continue;
-            }
-
+            // Frontend frontName map
             if (isset($xml->frontend->routers)) {
                 foreach ($xml->frontend->routers->children() ?? [] as $routerConfig) {
                     $module = (string) ($routerConfig->args->module ?? '');
@@ -511,6 +500,7 @@ final class AttributeCompiler
                 }
             }
 
+            // Admin frontName
             foreach (['admin', 'adminhtml'] as $adminArea) {
                 if (isset($xml->{$adminArea}->routers)) {
                     foreach ($xml->{$adminArea}->routers->children() ?? [] as $routerConfig) {
@@ -532,6 +522,7 @@ final class AttributeCompiler
                 }
             }
 
+            // Install frontName
             if (isset($xml->install->routers)) {
                 foreach ($xml->install->routers->children() ?? [] as $routerConfig) {
                     $frontName = (string) ($routerConfig->args->frontName ?? '');
