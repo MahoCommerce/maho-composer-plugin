@@ -144,6 +144,7 @@ final class AttributeCompiler
                 'alias' => $alias,
                 'method' => $method->getName(),
                 'type' => $observer->type,
+                'args' => $observer->args,
             ];
 
             foreach ($areas as $area) {
