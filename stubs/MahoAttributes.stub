@@ -30,3 +30,25 @@ class CronJob
     ) {
     }
 }
+
+#[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
+class Route
+{
+    /**
+     * @param string $path
+     * @param ?string $name
+     * @param list<string> $methods
+     * @param array<string, mixed> $defaults
+     * @param array<string, string> $requirements
+     * @param ?string $area
+     */
+    public function __construct(
+        public string $path,
+        public ?string $name = null,
+        public array $methods = [],
+        public array $defaults = [],
+        public array $requirements = [],
+        public ?string $area = null,
+    ) {
+    }
+}

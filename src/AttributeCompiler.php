@@ -6,6 +6,7 @@ use Composer\ClassMapGenerator\ClassMapGenerator;
 use Composer\IO\IOInterface;
 use Maho\Config\CronJob;
 use Maho\Config\Observer;
+use Maho\Config\Route;
 use ReflectionClass;
 use ReflectionMethod;
 
@@ -23,6 +24,7 @@ final class AttributeCompiler
      * @var array{
      *     observers: array<string, array<string, list<array{name: string, module: string, class: string, alias: string, method: string, type: string, args: array<string, mixed>}>>>,
      *     crontab: array<string, array{alias: string, method: string, schedule: ?string, config_path: ?string}>,
+     *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>
      * }
      */
@@ -38,6 +40,7 @@ final class AttributeCompiler
         self::$data = [
             'observers' => [],
             'crontab' => [],
+            'routes' => [],
         ];
 
         $replaces = [];
@@ -50,7 +53,10 @@ final class AttributeCompiler
                 continue;
             }
 
-            if (strpos($contents, 'Maho\Config\Observer') === false && strpos($contents, 'Maho\Config\CronJob') === false) {
+            if (strpos($contents, 'Maho\Config\Observer') === false
+                && strpos($contents, 'Maho\Config\CronJob') === false
+                && strpos($contents, 'Maho\Config\Route') === false
+            ) {
                 continue;
             }
 
@@ -71,6 +77,7 @@ final class AttributeCompiler
 
                 self::processObserverAttributes($method, $className, $replaces, $io);
                 self::processCronJobAttributes($method, $className, $io);
+                self::processRouteAttributes($method, $className, $io);
             }
         }
 
@@ -218,6 +225,102 @@ final class AttributeCompiler
         }
     }
 
+    private static function processRouteAttributes(
+        ReflectionMethod $method,
+        string $className,
+        IOInterface $io,
+    ): void {
+        $attributes = $method->getAttributes(Route::class);
+        foreach ($attributes as $attribute) {
+            try {
+                $route = $attribute->newInstance();
+            } catch (\Throwable $e) {
+                $io->writeError(sprintf(
+                    '  <warning>Skipping Route attribute on %s::%s: %s</warning>',
+                    $className,
+                    $method->getName(),
+                    $e->getMessage(),
+                ));
+                continue;
+            }
+
+            $name = $route->name ?? self::generateRouteName($className, $method->getName());
+            $area = $route->area ?? self::detectControllerArea($className);
+
+            if (isset(self::$data['routes'][$name])) {
+                $io->writeError(sprintf(
+                    '  <warning>Duplicate route name "%s" on %s::%s overwrites %s::%s</warning>',
+                    $name,
+                    $className,
+                    $method->getName(),
+                    self::$data['routes'][$name]['class'],
+                    self::$data['routes'][$name]['action'],
+                ));
+            }
+
+            if ($area === 'adminhtml') {
+                $module = self::extractAdminModuleName($className);
+                $controllerName = self::extractAdminControllerName($className);
+            } else {
+                $module = self::extractModuleName($className);
+                $controllerName = self::extractControllerName($className);
+            }
+
+            self::$data['routes'][$name] = [
+                'path' => $route->path,
+                'class' => $className,
+                'action' => $method->getName(),
+                'methods' => $route->methods,
+                'defaults' => $route->defaults,
+                'requirements' => $route->requirements,
+                'area' => $area,
+                'module' => $module,
+                'controllerName' => $controllerName,
+            ];
+        }
+    }
+
+    /**
+     * Generate a route name from class and method names.
+     *
+     * e.g. 'Mage_Contacts_IndexController::postAction' → 'mage.contacts.index.post'
+     */
+    private static function generateRouteName(string $className, string $methodName): string
+    {
+        $action = (string) preg_replace('/Action$/', '', $methodName);
+
+        $classKey = str_replace(['\\', '_'], '.', $className);
+        $classKey = strtolower((string) preg_replace('/Controller$/', '', $classKey));
+
+        return $classKey . '.' . strtolower($action);
+    }
+
+    /**
+     * Detect the area from the controller's class hierarchy.
+     */
+    private static function detectControllerArea(string $className): string
+    {
+        if (!class_exists($className)) {
+            return 'frontend';
+        }
+
+        $ref = new ReflectionClass($className);
+        while ($ref !== false) {
+            $name = $ref->getName();
+            if ($name === 'Mage_Adminhtml_Controller_Action'
+                || $name === 'Maho\\Controller\\AdminAction'
+            ) {
+                return 'adminhtml';
+            }
+            if ($name === 'Mage_Install_Controller_Action') {
+                return 'install';
+            }
+            $ref = $ref->getParentClass();
+        }
+
+        return 'frontend';
+    }
+
     /**
      * Remove observers targeted by `replaces` directives.
      *
@@ -337,6 +440,81 @@ final class AttributeCompiler
             }
         }
         return null;
+    }
+
+    /**
+     * Extract the controller short name from a controller class name.
+     *
+     * e.g. 'Mage_Checkout_CartController' → 'cart'
+     *      'Mage_Paygate_Authorizenet_PaymentController' → 'authorizenet_payment'
+     */
+    private static function extractControllerName(string $className): string
+    {
+        // Remove 'Controller' suffix
+        $name = (string) preg_replace('/Controller$/', '', $className);
+
+        // Get everything after the module prefix (first two segments)
+        $parts = explode('_', $name);
+        if (count($parts) > 2) {
+            $controllerParts = array_slice($parts, 2);
+            return strtolower(implode('_', $controllerParts));
+        }
+
+        return strtolower($parts[count($parts) - 1] ?? '');
+    }
+
+    /**
+     * Extract the routing module name for admin controllers.
+     *
+     * For Mage_Adminhtml controllers (e.g. Mage_Adminhtml_Catalog_ProductController),
+     * the module is the first two segments: 'Mage_Adminhtml'.
+     *
+     * For non-Adminhtml modules (e.g. Mage_Bundle_Adminhtml_BundleController),
+     * the module includes the Adminhtml segment: 'Mage_Bundle_Adminhtml'.
+     */
+    private static function extractAdminModuleName(string $className): string
+    {
+        $parts = explode('_', (string) preg_replace('/Controller$/', '', $className));
+
+        // If the third segment is 'Adminhtml', the routing module includes it
+        // e.g. Mage_Bundle_Adminhtml_Bundle → Mage_Bundle_Adminhtml
+        if (count($parts) > 2 && $parts[2] === 'Adminhtml' && $parts[1] !== 'Adminhtml') {
+            return $parts[0] . '_' . $parts[1] . '_' . $parts[2];
+        }
+
+        // Standard Adminhtml module: Mage_Adminhtml_Catalog_Product → Mage_Adminhtml
+        if (count($parts) >= 2) {
+            return $parts[0] . '_' . $parts[1];
+        }
+
+        return $className;
+    }
+
+    /**
+     * Extract the controller short name for admin controllers.
+     *
+     * For Mage_Adminhtml controllers (e.g. Mage_Adminhtml_Catalog_ProductController),
+     * everything after the module prefix: 'catalog_product'.
+     *
+     * For non-Adminhtml modules (e.g. Mage_Bundle_Adminhtml_BundleController),
+     * everything after the Adminhtml segment: 'bundle'.
+     */
+    private static function extractAdminControllerName(string $className): string
+    {
+        $name = (string) preg_replace('/Controller$/', '', $className);
+        $parts = explode('_', $name);
+
+        // Non-Adminhtml module: skip first 3 segments (Vendor_Module_Adminhtml)
+        if (count($parts) > 3 && $parts[2] === 'Adminhtml' && $parts[1] !== 'Adminhtml') {
+            return strtolower(implode('_', array_slice($parts, 3)));
+        }
+
+        // Standard Adminhtml module: skip first 2 segments (Mage_Adminhtml)
+        if (count($parts) > 2) {
+            return strtolower(implode('_', array_slice($parts, 2)));
+        }
+
+        return strtolower($parts[count($parts) - 1] ?? '');
     }
 
     private static function extractModuleName(string $className): string
