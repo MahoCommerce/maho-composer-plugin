@@ -463,7 +463,7 @@ final class AttributeCompiler
     {
         self::$classAliasMap = [];
 
-        foreach (AutoloadRuntime::globPackages('/app/code/*/*/etc/config.xml') as $configFile) {
+        foreach (AutoloadRuntime::globPackages('/app/code/*/*/*/etc/config.xml') as $configFile) {
             $xml = @simplexml_load_file($configFile);
             if ($xml === false) {
                 $io->writeError(sprintf('  <warning>Failed to parse %s, skipping alias resolution for this module</warning>', $configFile));
@@ -494,7 +494,7 @@ final class AttributeCompiler
         self::$adminFrontName = 'admin';
         self::$installFrontName = 'install';
 
-        foreach (AutoloadRuntime::globPackages('/app/code/*/*/etc/config.xml') as $configFile) {
+        foreach (AutoloadRuntime::globPackages('/app/code/*/*/*/etc/config.xml') as $configFile) {
             $xml = @simplexml_load_file($configFile);
             if ($xml === false) {
                 $io->writeError(sprintf('  <warning>Failed to parse %s, skipping frontName resolution for this module</warning>', $configFile));
@@ -573,11 +573,13 @@ final class AttributeCompiler
             };
 
             if ($frontName === null) {
-                $io->writeError(sprintf(
-                    '  <warning>No frontName found for module "%s", skipping reverse lookup for route "%s"</warning>',
-                    $route['module'],
-                    $routeName,
-                ));
+                if ($io->isVerbose()) {
+                    $io->writeError(sprintf(
+                        '  <warning>No frontName found for module "%s", skipping reverse lookup for route "%s"</warning>',
+                        $route['module'],
+                        $routeName,
+                    ));
+                }
                 continue;
             }
 
