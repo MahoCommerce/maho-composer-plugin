@@ -122,7 +122,13 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
         // Symfony Console classes that conflict with Composer's bundled version.
         $includePaths = AutoloadRuntime::generateIncludePaths();
         $packages = AutoloadRuntime::getInstalledPackages();
-        $autoloader = function (string $class) use ($rootDir, $includePaths, $packages): void {
+        $controllerClassMap = AutoloadRuntime::generateClassMap();
+        $autoloader = function (string $class) use ($rootDir, $includePaths, $packages, $controllerClassMap): void {
+            // Controller classes (classmap-based, not PSR-0 compatible)
+            if (isset($controllerClassMap[$class])) {
+                require_once $controllerClassMap[$class];
+                return;
+            }
             // Maho namespace classes from lib/ (e.g. Maho\Config\Observer)
             if (str_starts_with($class, 'Maho\\')) {
                 $relative = str_replace('\\', '/', $class) . '.php';
