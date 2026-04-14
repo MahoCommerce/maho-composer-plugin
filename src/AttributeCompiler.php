@@ -40,7 +40,7 @@ final class AttributeCompiler
      *     crontab: array<string, array{alias: string, method: string, schedule: ?string, config_path: ?string}>,
      *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string, pathVariables: list<string>}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>,
-     *     reverseLookup?: array<string, string>
+     *     reverseLookup: array<string, string>
      * }
      */
     private static array $data;
@@ -56,12 +56,13 @@ final class AttributeCompiler
             'observers' => [],
             'crontab' => [],
             'routes' => [],
+            'reverseLookup' => [],
         ];
 
         $replaces = [];
 
         self::buildClassAliasMap($io);
-        self::buildFrontNameMap();
+        self::buildFrontNameMap($io);
 
         foreach (self::scanClasses() as $className => $filePath) {
             $contents = file_get_contents($filePath);
@@ -105,8 +106,9 @@ final class AttributeCompiler
     /**
      * Scan module directories for PHP classes using Composer's ClassMapGenerator.
      *
-     * Only scans app/code/{pool}/{Namespace}/{Module}/ directories.
-     * Classes in lib/ or other non-standard locations are not included.
+     * Scans both legacy code pools (app/code/{pool}/{Namespace}/{Module}/) and
+     * PSR-4 sources from installed maho-source / maho-module / magento-module packages.
+     * The root package is excluded from the PSR-4 scan to avoid traversing vendor/.
      *
      * Later packages overwrite earlier ones so that local code pool
      * overrides take precedence over core/community classes.
@@ -117,8 +119,18 @@ final class AttributeCompiler
     {
         $classes = [];
 
+        // Legacy code pool: app/code/{pool}/{Namespace}/{Module}/
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/*', GLOB_ONLYDIR) as $moduleDir) {
             foreach (ClassMapGenerator::createMap($moduleDir) as $class => $file) {
+                $classes[$class] = $file;
+            }
+        }
+
+        // PSR-4 classes: scan each installed (non-root) maho/magento package in full
+        $packages = AutoloadRuntime::getInstalledPackages();
+        unset($packages['root']);
+        foreach ($packages as $info) {
+            foreach (ClassMapGenerator::createMap($info['path']) as $class => $file) {
                 $classes[$class] = $file;
             }
         }
@@ -323,7 +335,9 @@ final class AttributeCompiler
      */
     private static function detectControllerArea(string $className): string
     {
-        assert(class_exists($className));
+        if (!class_exists($className)) {
+            return 'frontend';
+        }
         $ref = new ReflectionClass($className);
         while ($ref !== false) {
             $name = $ref->getName();
@@ -454,7 +468,7 @@ final class AttributeCompiler
      * Admin:    <admin><routers><X><args><frontName>  (shared across all admin modules)
      * Install:  <install><routers><X><args><frontName>
      */
-    private static function buildFrontNameMap(): void
+    private static function buildFrontNameMap(IOInterface $io): void
     {
         self::$frontNameMap = [];
         self::$adminFrontName = 'admin';
@@ -463,6 +477,7 @@ final class AttributeCompiler
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/etc/config.xml') as $configFile) {
             $xml = @simplexml_load_file($configFile);
             if ($xml === false) {
+                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping frontName resolution for this module</warning>', $configFile));
                 continue;
             }
 
@@ -480,7 +495,17 @@ final class AttributeCompiler
                 if (isset($xml->{$adminArea}->routers)) {
                     foreach ($xml->{$adminArea}->routers->children() as $routerConfig) {
                         $frontName = (string) ($routerConfig->args->frontName ?? '');
-                        if ($frontName !== '') {
+                        if ($frontName === '') {
+                            continue;
+                        }
+                        if (self::$adminFrontName !== 'admin' && self::$adminFrontName !== $frontName) {
+                            $io->writeError(sprintf(
+                                '  <warning>Conflicting admin frontName: already have "%s", ignoring "%s" from %s</warning>',
+                                self::$adminFrontName,
+                                $frontName,
+                                $configFile,
+                            ));
+                        } else {
                             self::$adminFrontName = $frontName;
                         }
                     }
@@ -490,7 +515,17 @@ final class AttributeCompiler
             if (isset($xml->install->routers)) {
                 foreach ($xml->install->routers->children() as $routerConfig) {
                     $frontName = (string) ($routerConfig->args->frontName ?? '');
-                    if ($frontName !== '') {
+                    if ($frontName === '') {
+                        continue;
+                    }
+                    if (self::$installFrontName !== 'install' && self::$installFrontName !== $frontName) {
+                        $io->writeError(sprintf(
+                            '  <warning>Conflicting install frontName: already have "%s", ignoring "%s" from %s</warning>',
+                            self::$installFrontName,
+                            $frontName,
+                            $configFile,
+                        ));
+                    } else {
                         self::$installFrontName = $frontName;
                     }
                 }
@@ -500,7 +535,9 @@ final class AttributeCompiler
 
     /**
      * Build a reverse lookup map from Magento-style frontName/controller/action keys to route names.
-     * Written to $data['reverseLookup'] only when at least one route resolves successfully.
+     *
+     * For PSR-4 modules, extractModuleName() returns 'Vendor\Module' while config.xml <args><module>
+     * typically uses 'Vendor_Module'. Both formats are tried so either convention works.
      */
     private static function buildReverseLookup(): void
     {
@@ -510,7 +547,9 @@ final class AttributeCompiler
             $frontName = match ($route['area']) {
                 'adminhtml' => self::$adminFrontName,
                 'install' => self::$installFrontName,
-                default => self::$frontNameMap[$route['module']] ?? null,
+                default => self::$frontNameMap[$route['module']]
+                    ?? self::$frontNameMap[str_replace('\\', '_', $route['module'])]
+                    ?? null,
             };
 
             if ($frontName === null) {
@@ -522,9 +561,7 @@ final class AttributeCompiler
             $reverseLookup[$key] = $routeName;
         }
 
-        if ($reverseLookup !== []) {
-            self::$data['reverseLookup'] = $reverseLookup;
-        }
+        self::$data['reverseLookup'] = $reverseLookup;
     }
 
     /**
