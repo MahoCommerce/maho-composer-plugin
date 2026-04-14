@@ -471,7 +471,7 @@ final class AttributeCompiler
             }
 
             foreach (['models', 'helpers', 'blocks'] as $groupType) {
-                foreach ($xml->global->{$groupType}->children() as $groupName => $groupConfig) {
+                foreach ($xml->global->{$groupType}->children() ?? [] as $groupName => $groupConfig) {
                     $classPrefix = (string) $groupConfig->class;
                     if ($classPrefix !== '') {
                         self::$classAliasMap[$classPrefix] = strtolower($groupName);
@@ -502,7 +502,7 @@ final class AttributeCompiler
             }
 
             if (isset($xml->frontend->routers)) {
-                foreach ($xml->frontend->routers->children() as $routerConfig) {
+                foreach ($xml->frontend->routers->children() ?? [] as $routerConfig) {
                     $module = (string) ($routerConfig->args->module ?? '');
                     $frontName = (string) ($routerConfig->args->frontName ?? '');
                     if ($module !== '' && $frontName !== '') {
@@ -513,7 +513,7 @@ final class AttributeCompiler
 
             foreach (['admin', 'adminhtml'] as $adminArea) {
                 if (isset($xml->{$adminArea}->routers)) {
-                    foreach ($xml->{$adminArea}->routers->children() as $routerConfig) {
+                    foreach ($xml->{$adminArea}->routers->children() ?? [] as $routerConfig) {
                         $frontName = (string) ($routerConfig->args->frontName ?? '');
                         if ($frontName === '') {
                             continue;
@@ -533,7 +533,7 @@ final class AttributeCompiler
             }
 
             if (isset($xml->install->routers)) {
-                foreach ($xml->install->routers->children() as $routerConfig) {
+                foreach ($xml->install->routers->children() ?? [] as $routerConfig) {
                     $frontName = (string) ($routerConfig->args->frontName ?? '');
                     if ($frontName === '') {
                         continue;
