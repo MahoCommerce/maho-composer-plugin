@@ -651,8 +651,7 @@ final class AttributeCompiler
             // and should be skipped — unless the module itself is named 'Adminhtml'
             // (e.g. Mage_Adminhtml_Catalog_ProductController → 'catalog_product').
             if (
-                isset($controllerParts[0])
-                && strtolower($controllerParts[0]) === 'adminhtml'
+                strtolower($controllerParts[0]) === 'adminhtml'
                 && strtolower($parts[1]) !== 'adminhtml'
             ) {
                 array_shift($controllerParts);
