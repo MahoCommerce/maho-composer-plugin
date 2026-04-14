@@ -258,14 +258,6 @@ final class AttributeCompiler
                 ));
             }
 
-            if ($area === 'adminhtml') {
-                $module = self::extractAdminModuleName($className);
-                $controllerName = self::extractAdminControllerName($className);
-            } else {
-                $module = self::extractModuleName($className);
-                $controllerName = self::extractControllerName($className);
-            }
-
             self::$data['routes'][$name] = [
                 'path' => $route->path,
                 'class' => $className,
@@ -274,8 +266,8 @@ final class AttributeCompiler
                 'defaults' => $route->defaults,
                 'requirements' => $route->requirements,
                 'area' => $area,
-                'module' => $module,
-                'controllerName' => $controllerName,
+                'module' => self::extractModuleName($className),
+                'controllerName' => self::extractControllerName($className),
             ];
         }
     }
@@ -311,9 +303,6 @@ final class AttributeCompiler
                 || $name === 'Maho\\Controller\\AdminAction'
             ) {
                 return 'adminhtml';
-            }
-            if ($name === 'Mage_Install_Controller_Action') {
-                return 'install';
             }
             $ref = $ref->getParentClass();
         }
@@ -447,6 +436,7 @@ final class AttributeCompiler
      *
      * e.g. 'Mage_Checkout_CartController' → 'cart'
      *      'Mage_Paygate_Authorizenet_PaymentController' → 'authorizenet_payment'
+     *      'Mage_Bundle_Adminhtml_Bundle_Product_EditController' → 'bundle_product_edit'
      */
     private static function extractControllerName(string $className): string
     {
@@ -457,61 +447,20 @@ final class AttributeCompiler
         $parts = explode('_', $name);
         if (count($parts) > 2) {
             $controllerParts = array_slice($parts, 2);
+
+            // Sub-module admin controllers live in a controllers/Adminhtml/ subdirectory.
+            // The 'Adminhtml' segment is organizational (not part of the URL controller name)
+            // and should be skipped — unless the module itself is named 'Adminhtml'
+            // (e.g. Mage_Adminhtml_Catalog_ProductController → 'catalog_product').
+            if (
+                isset($controllerParts[0])
+                && strtolower($controllerParts[0]) === 'adminhtml'
+                && strtolower($parts[1]) !== 'adminhtml'
+            ) {
+                array_shift($controllerParts);
+            }
+
             return strtolower(implode('_', $controllerParts));
-        }
-
-        return strtolower($parts[count($parts) - 1] ?? '');
-    }
-
-    /**
-     * Extract the routing module name for admin controllers.
-     *
-     * For Mage_Adminhtml controllers (e.g. Mage_Adminhtml_Catalog_ProductController),
-     * the module is the first two segments: 'Mage_Adminhtml'.
-     *
-     * For non-Adminhtml modules (e.g. Mage_Bundle_Adminhtml_BundleController),
-     * the module includes the Adminhtml segment: 'Mage_Bundle_Adminhtml'.
-     */
-    private static function extractAdminModuleName(string $className): string
-    {
-        $parts = explode('_', (string) preg_replace('/Controller$/', '', $className));
-
-        // If the third segment is 'Adminhtml', the routing module includes it
-        // e.g. Mage_Bundle_Adminhtml_Bundle → Mage_Bundle_Adminhtml
-        if (count($parts) > 2 && $parts[2] === 'Adminhtml' && $parts[1] !== 'Adminhtml') {
-            return $parts[0] . '_' . $parts[1] . '_' . $parts[2];
-        }
-
-        // Standard Adminhtml module: Mage_Adminhtml_Catalog_Product → Mage_Adminhtml
-        if (count($parts) >= 2) {
-            return $parts[0] . '_' . $parts[1];
-        }
-
-        return $className;
-    }
-
-    /**
-     * Extract the controller short name for admin controllers.
-     *
-     * For Mage_Adminhtml controllers (e.g. Mage_Adminhtml_Catalog_ProductController),
-     * everything after the module prefix: 'catalog_product'.
-     *
-     * For non-Adminhtml modules (e.g. Mage_Bundle_Adminhtml_BundleController),
-     * everything after the Adminhtml segment: 'bundle'.
-     */
-    private static function extractAdminControllerName(string $className): string
-    {
-        $name = (string) preg_replace('/Controller$/', '', $className);
-        $parts = explode('_', $name);
-
-        // Non-Adminhtml module: skip first 3 segments (Vendor_Module_Adminhtml)
-        if (count($parts) > 3 && $parts[2] === 'Adminhtml' && $parts[1] !== 'Adminhtml') {
-            return strtolower(implode('_', array_slice($parts, 3)));
-        }
-
-        // Standard Adminhtml module: skip first 2 segments (Mage_Adminhtml)
-        if (count($parts) > 2) {
-            return strtolower(implode('_', array_slice($parts, 2)));
         }
 
         return strtolower($parts[count($parts) - 1] ?? '');
