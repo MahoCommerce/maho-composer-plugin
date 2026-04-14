@@ -22,7 +22,7 @@ final class AttributeCompiler
 
     /**
      * @var array{
-     *     observers: array<string, array<string, list<array{name: string, module: string, class: string, alias: string, method: string, type: string, args: array<string, mixed>}>>>,
+     *     observers: array<string, array<string, list<array{name: string, module: string, class: string, alias: string, method: string, type: string}>>>,
      *     crontab: array<string, array{alias: string, method: string, schedule: ?string, config_path: ?string}>,
      *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>
@@ -144,7 +144,6 @@ final class AttributeCompiler
                 'alias' => $alias,
                 'method' => $method->getName(),
                 'type' => $observer->type,
-                'args' => $observer->args,
             ];
 
             foreach ($areas as $area) {
@@ -365,7 +364,7 @@ final class AttributeCompiler
      * - Alias format (e.g. 'catalog/observer::myMethod')
      * - Class name format (e.g. 'Mage_Catalog_Model_Observer::myMethod')
      *
-     * @param array{name: string, module: string, class: string, alias: string, method: string, type: string, args: array<string, mixed>} $observer
+     * @param array{name: string, module: string, class: string, alias: string, method: string, type: string} $observer
      */
     private static function observerMatchesTarget(array $observer, string $target): bool
     {
