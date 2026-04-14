@@ -64,42 +64,58 @@ final class AttributeCompiler
         self::buildClassAliasMap($io);
         self::buildFrontNameMap($io);
 
-        foreach (self::scanClasses() as $className => $filePath) {
-            $contents = file_get_contents($filePath);
-            if ($contents === false) {
-                continue;
+        $scannedClasses = self::scanClasses();
+
+        // Register a temporary classmap autoloader so that class_exists() and
+        // ReflectionClass work for all scanned classes, including PSR-4 controllers
+        // that the minimal autoloader in AutoloadPlugin cannot resolve.
+        $classMapAutoloader = static function (string $class) use ($scannedClasses): void {
+            if (isset($scannedClasses[$class])) {
+                require_once $scannedClasses[$class];
             }
+        };
+        spl_autoload_register($classMapAutoloader);
 
-            if (strpos($contents, 'Maho\Config\Observer') === false
-                && strpos($contents, 'Maho\Config\CronJob') === false
-                && strpos($contents, 'Maho\Config\Route') === false
-            ) {
-                continue;
-            }
-
-            if (!class_exists($className)) {
-                continue;
-            }
-
-            $reflection = new ReflectionClass($className);
-
-            if ($reflection->isAbstract() || $reflection->isInterface() || $reflection->isTrait()) {
-                continue;
-            }
-
-            foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
-                if ($method->getDeclaringClass()->getName() !== $className) {
+        try {
+            foreach ($scannedClasses as $className => $filePath) {
+                $contents = file_get_contents($filePath);
+                if ($contents === false) {
                     continue;
                 }
 
-                self::processObserverAttributes($method, $className, $replaces, $io);
-                self::processCronJobAttributes($method, $className, $io);
-                self::processRouteAttributes($method, $className, $io);
+                if (strpos($contents, 'Maho\Config\Observer') === false
+                    && strpos($contents, 'Maho\Config\CronJob') === false
+                    && strpos($contents, 'Maho\Config\Route') === false
+                ) {
+                    continue;
+                }
+
+                if (!class_exists($className)) {
+                    continue;
+                }
+
+                $reflection = new ReflectionClass($className);
+
+                if ($reflection->isAbstract() || $reflection->isInterface() || $reflection->isTrait()) {
+                    continue;
+                }
+
+                foreach ($reflection->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+                    if ($method->getDeclaringClass()->getName() !== $className) {
+                        continue;
+                    }
+
+                    self::processObserverAttributes($method, $className, $replaces, $io);
+                    self::processCronJobAttributes($method, $className, $io);
+                    self::processRouteAttributes($method, $className, $io);
+                }
             }
+        } finally {
+            spl_autoload_unregister($classMapAutoloader);
         }
 
         self::applyReplaces($replaces);
-        self::buildReverseLookup();
+        self::buildReverseLookup($io);
         self::writeOutput($outputDir, $io);
     }
 
@@ -126,10 +142,15 @@ final class AttributeCompiler
             }
         }
 
-        // PSR-4 classes: scan each installed (non-root) maho/magento package in full
+        // PSR-4 classes: scan each installed maho-module/magento-module package in full.
+        // maho-source packages are skipped as their classes are already covered by
+        // the legacy code pool scan above, and scanning their root would be expensive.
         $packages = AutoloadRuntime::getInstalledPackages();
         unset($packages['root']);
         foreach ($packages as $info) {
+            if ($info['type'] === 'maho-source') {
+                continue;
+            }
             foreach (ClassMapGenerator::createMap($info['path']) as $class => $file) {
                 $classes[$class] = $file;
             }
@@ -274,7 +295,7 @@ final class AttributeCompiler
             }
 
             $name = $route->name ?? self::generateRouteName($className, $method->getName());
-            $area = $route->area ?? self::detectControllerArea($className);
+            $area = $route->area ?? self::detectControllerArea($className, $io);
 
             if (isset(self::$data['routes'][$name])) {
                 $io->writeError(sprintf(
@@ -333,9 +354,13 @@ final class AttributeCompiler
     /**
      * Detect the area from the controller's class hierarchy.
      */
-    private static function detectControllerArea(string $className): string
+    private static function detectControllerArea(string $className, IOInterface $io): string
     {
         if (!class_exists($className)) {
+            $io->writeError(sprintf(
+                '  <warning>Cannot load class %s for area detection, defaulting to frontend</warning>',
+                $className,
+            ));
             return 'frontend';
         }
         $ref = new ReflectionClass($className);
@@ -539,7 +564,7 @@ final class AttributeCompiler
      * For PSR-4 modules, extractModuleName() returns 'Vendor\Module' while config.xml <args><module>
      * typically uses 'Vendor_Module'. Both formats are tried so either convention works.
      */
-    private static function buildReverseLookup(): void
+    private static function buildReverseLookup(IOInterface $io): void
     {
         $reverseLookup = [];
 
@@ -553,6 +578,11 @@ final class AttributeCompiler
             };
 
             if ($frontName === null) {
+                $io->writeError(sprintf(
+                    '  <warning>No frontName found for module "%s", skipping reverse lookup for route "%s"</warning>',
+                    $route['module'],
+                    $routeName,
+                ));
                 continue;
             }
 
