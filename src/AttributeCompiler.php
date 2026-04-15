@@ -13,6 +13,14 @@ use ReflectionMethod;
 final class AttributeCompiler
 {
     /**
+     * Set of active module names (e.g. 'Mage_Core' => true), built from app/etc/modules/*.xml.
+     * Null means no module XMLs were found → treat all modules as active (no filtering).
+     *
+     * @var array<string, true>|null
+     */
+    private static ?array $activeModules = null;
+
+    /**
      * Map of class prefix → model group alias built from config.xml files.
      * e.g. 'Mage_Newsletter_Model' => 'newsletter'
      *
@@ -61,6 +69,7 @@ final class AttributeCompiler
 
         $replaces = [];
 
+        self::buildActiveModules($io);
         self::buildConfigMaps($io);
 
         $scannedClasses = self::scanClasses();
@@ -128,6 +137,8 @@ final class AttributeCompiler
      * Later packages overwrite earlier ones so that local code pool
      * overrides take precedence over core/community classes.
      *
+     * Modules disabled in app/etc/modules/*.xml (or with disabled dependencies) are skipped.
+     *
      * @return array<class-string, string>
      */
     private static function scanClasses(): array
@@ -136,6 +147,12 @@ final class AttributeCompiler
 
         // Legacy code pool: app/code/{pool}/{Namespace}/{Module}/
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/*', GLOB_ONLYDIR) as $moduleDir) {
+            if (self::$activeModules !== null) {
+                $segments = array_slice(explode('/', $moduleDir), -2);
+                if (!isset(self::$activeModules[implode('_', $segments)])) {
+                    continue;
+                }
+            }
             foreach (ClassMapGenerator::createMap($moduleDir) as $class => $file) {
                 $classes[$class] = $file;
             }
@@ -454,6 +471,88 @@ final class AttributeCompiler
     }
 
     /**
+     * Parse all app/etc/modules/*.xml files to determine which modules are active.
+     *
+     * A module is considered effectively active only if:
+     * - Its <active> flag is not false/0
+     * - All modules listed in its <depends> block are also effectively active
+     *
+     * Sets self::$activeModules to a name→true map of active modules,
+     * or leaves it null when no module XMLs are found (treat all modules as active).
+     */
+    private static function buildActiveModules(IOInterface $io): void
+    {
+        self::$activeModules = null;
+
+        $moduleXmls = AutoloadRuntime::globPackages('/app/etc/modules/*.xml');
+        if ($moduleXmls === []) {
+            return;
+        }
+
+        /** @var array<string, array{active: bool, depends: list<string>}> $modules */
+        $modules = [];
+
+        // Process in order: later declarations (root package last) override earlier ones
+        foreach ($moduleXmls as $xmlFile) {
+            $xml = @simplexml_load_file($xmlFile);
+            if ($xml === false) {
+                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping</warning>', $xmlFile));
+                continue;
+            }
+            foreach ($xml->modules->children() ?? [] as $moduleName => $moduleConfig) {
+                $activeStr = strtolower(trim((string) ($moduleConfig->active ?? 'true')));
+                $active = ($activeStr !== 'false' && $activeStr !== '0');
+                $depends = [];
+                if (isset($moduleConfig->depends)) {
+                    foreach ($moduleConfig->depends->children() ?? [] as $depName => $_) {
+                        $depends[] = $depName;
+                    }
+                }
+                $modules[$moduleName] = ['active' => $active, 'depends' => $depends];
+            }
+        }
+
+        if ($modules === []) {
+            return;
+        }
+
+        /** @var array<string, bool> $resolved */
+        $resolved = [];
+
+        $resolve = static function (string $name) use (&$modules, &$resolved, &$resolve): bool {
+            if (array_key_exists($name, $resolved)) {
+                return $resolved[$name];
+            }
+            if (!isset($modules[$name])) {
+                return $resolved[$name] = true; // Unknown dep → assume active
+            }
+            if (!$modules[$name]['active']) {
+                return $resolved[$name] = false;
+            }
+            $resolved[$name] = true; // Guard against circular deps
+            foreach ($modules[$name]['depends'] as $dep) {
+                if (!$resolve($dep)) {
+                    return $resolved[$name] = false;
+                }
+            }
+            return $resolved[$name];
+        };
+
+        foreach (array_keys($modules) as $name) {
+            $resolve($name);
+        }
+
+        /** @var array<string, true> $activeMap */
+        $activeMap = [];
+        foreach ($resolved as $name => $active) {
+            if ($active) {
+                $activeMap[$name] = true;
+            }
+        }
+        self::$activeModules = $activeMap;
+    }
+
+    /**
      * Parse all module config.xml files once and populate both the class alias map
      * and the frontName maps in a single pass.
      *
@@ -473,6 +572,14 @@ final class AttributeCompiler
         self::$installFrontName = 'install';
 
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/*/etc/config.xml') as $configFile) {
+            if (self::$activeModules !== null) {
+                // Path: .../app/code/{pool}/{Namespace}/{Module}/etc/config.xml
+                $segments = array_slice(explode('/', $configFile), -4, 2);
+                if (!isset(self::$activeModules[implode('_', $segments)])) {
+                    continue;
+                }
+            }
+
             $xml = @simplexml_load_file($configFile);
             if ($xml === false) {
                 $io->writeError(sprintf('  <warning>Failed to parse %s, skipping config maps for this module</warning>', $configFile));
