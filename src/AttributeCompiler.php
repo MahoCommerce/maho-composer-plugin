@@ -45,7 +45,7 @@ final class AttributeCompiler
     /**
      * @var array{
      *     observers: array<string, array<string, list<array{name: string, module: string, class: string, alias: string, method: string, type: string}>>>,
-     *     crontab: array<string, array{alias: string, method: string, schedule: ?string, config_path: ?string}>,
+     *     crontab: array<string, array{module: string, alias: string, method: string, schedule: ?string, config_path: ?string}>,
      *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string, pathVariables: list<string>}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>,
      *     reverseLookup: array<string, string>
@@ -278,6 +278,7 @@ final class AttributeCompiler
             }
 
             self::$data['crontab'][$name] = [
+                'module' => self::extractModuleName($className),
                 'alias' => self::resolveClassAlias($className) ?? $className,
                 'method' => $method->getName(),
                 'schedule' => $cronJob->schedule,
