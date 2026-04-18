@@ -9,6 +9,10 @@ use Maho\Config\Observer;
 use Maho\Config\Route;
 use ReflectionClass;
 use ReflectionMethod;
+use Symfony\Component\Routing\Generator\Dumper\CompiledUrlGeneratorDumper;
+use Symfony\Component\Routing\Matcher\Dumper\CompiledUrlMatcherDumper;
+use Symfony\Component\Routing\Route as SymfonyRoute;
+use Symfony\Component\Routing\RouteCollection;
 
 final class AttributeCompiler
 {
@@ -29,18 +33,16 @@ final class AttributeCompiler
     private static array $classAliasMap = [];
 
     /**
-     * Map of module name → frontend frontName, built from config.xml router config.
-     * e.g. 'Mage_Checkout' => 'checkout'
-     *
-     * @var array<string, string>
+     * Sentinel key for admin area in reverseLookup / controllerLookup.
+     * Admin frontName is runtime-configurable (use_custom_admin_path), so routes are
+     * keyed by this sentinel in compiled lookup maps and translated at dispatch time.
      */
-    private static array $frontNameMap = [];
+    public const ADMIN_SENTINEL = '__admin__';
 
-    /** Admin area frontName (typically 'admin'), detected from config.xml. */
-    private static string $adminFrontName = 'admin';
-
-    /** Install area frontName (typically 'install'), detected from config.xml. */
-    private static string $installFrontName = 'install';
+    /**
+     * Sentinel key for install area in reverseLookup / controllerLookup.
+     */
+    public const INSTALL_SENTINEL = '__install__';
 
     /**
      * @var array{
@@ -48,7 +50,8 @@ final class AttributeCompiler
      *     crontab: array<string, array{module: string, alias: string, method: string, schedule: ?string, config_path: ?string}>,
      *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string, pathVariables: list<string>}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>,
-     *     reverseLookup: array<string, string>
+     *     reverseLookup: array<string, string>,
+     *     controllerLookup: array<string, string>
      * }
      */
     private static array $data;
@@ -65,6 +68,7 @@ final class AttributeCompiler
             'crontab' => [],
             'routes' => [],
             'reverseLookup' => [],
+            'controllerLookup' => [],
         ];
 
         $replaces = [];
@@ -125,6 +129,7 @@ final class AttributeCompiler
         self::applyReplaces($replaces);
         self::buildReverseLookup($io);
         self::writeOutput($outputDir, $io);
+        self::dumpRoutingFiles($outputDir, $io);
     }
 
     /**
@@ -320,10 +325,25 @@ final class AttributeCompiler
                 ));
             }
 
-            preg_match_all('/\{(\w+)\}/', $route->path, $pathVarMatches);
+            // Admin paths compile with a `{_adminFrontName}` placeholder so the runtime
+            // admin frontName (use_custom_admin_path) can be injected per request.
+            // - Path starting with /admin: substitute the prefix with the placeholder.
+            // - Any other admin path: prepend the placeholder so third-party modules
+            //   can declare routes like #[Route('/foo', area: 'adminhtml')] without
+            //   needing to include the admin prefix themselves.
+            $path = $route->path;
+            if ($area === 'adminhtml') {
+                if (preg_match('#^/admin(/|$)#', $path) === 1) {
+                    $path = (string) preg_replace('#^/admin(/|$)#', '/{_adminFrontName}$1', $path);
+                } else {
+                    $path = '/{_adminFrontName}' . (str_starts_with($path, '/') ? '' : '/') . $path;
+                }
+            }
+
+            preg_match_all('/\{(\w+)\}/', $path, $pathVarMatches);
 
             self::$data['routes'][$name] = [
-                'path' => $route->path,
+                'path' => $path,
                 'class' => $className,
                 'action' => $method->getName(),
                 'methods' => $route->methods,
@@ -554,23 +574,12 @@ final class AttributeCompiler
     }
 
     /**
-     * Parse all module config.xml files once and populate both the class alias map
-     * and the frontName maps in a single pass.
-     *
-     * Class aliases: <global><models|helpers|blocks><group><class> → group alias
-     * e.g. 'Mage_Newsletter_Model' => 'newsletter'
-     *
-     * Front names:
-     *   Frontend: <frontend><routers><X><args><module> + <frontName>
-     *   Admin:    <admin|adminhtml><routers><X><args><frontName>
-     *   Install:  <install><routers><X><args><frontName>
+     * Parse <global><models|helpers|blocks><group><class> across all module config.xml files
+     * to build the class-alias map (e.g. 'Mage_Newsletter_Model' => 'newsletter').
      */
     private static function buildConfigMaps(IOInterface $io): void
     {
         self::$classAliasMap = [];
-        self::$frontNameMap = [];
-        self::$adminFrontName = 'admin';
-        self::$installFrontName = 'install';
 
         foreach (AutoloadRuntime::globPackages('/app/code/*/*/*/etc/config.xml') as $configFile) {
             if (self::$activeModules !== null) {
@@ -587,7 +596,6 @@ final class AttributeCompiler
                 continue;
             }
 
-            // Class alias map
             foreach (['models', 'helpers', 'blocks'] as $groupType) {
                 foreach ($xml->global->{$groupType}->children() ?? [] as $groupName => $groupConfig) {
                     $classPrefix = (string) $groupConfig->class;
@@ -596,86 +604,48 @@ final class AttributeCompiler
                     }
                 }
             }
-
-            // Frontend frontName map
-            if (isset($xml->frontend->routers)) {
-                foreach ($xml->frontend->routers->children() ?? [] as $routerConfig) {
-                    $module = (string) ($routerConfig->args->module ?? '');
-                    $frontName = (string) ($routerConfig->args->frontName ?? '');
-                    if ($module !== '' && $frontName !== '') {
-                        self::$frontNameMap[$module] = $frontName;
-                    }
-                }
-            }
-
-            // Admin frontName
-            foreach (['admin', 'adminhtml'] as $adminArea) {
-                if (isset($xml->{$adminArea}->routers)) {
-                    foreach ($xml->{$adminArea}->routers->children() ?? [] as $routerConfig) {
-                        $frontName = (string) ($routerConfig->args->frontName ?? '');
-                        if ($frontName === '') {
-                            continue;
-                        }
-                        if (self::$adminFrontName !== 'admin' && self::$adminFrontName !== $frontName) {
-                            $io->writeError(sprintf(
-                                '  <warning>Conflicting admin frontName: already have "%s", ignoring "%s" from %s</warning>',
-                                self::$adminFrontName,
-                                $frontName,
-                                $configFile,
-                            ));
-                        } else {
-                            self::$adminFrontName = $frontName;
-                        }
-                    }
-                }
-            }
-
-            // Install frontName
-            if (isset($xml->install->routers)) {
-                foreach ($xml->install->routers->children() ?? [] as $routerConfig) {
-                    $frontName = (string) ($routerConfig->args->frontName ?? '');
-                    if ($frontName === '') {
-                        continue;
-                    }
-                    if (self::$installFrontName !== 'install' && self::$installFrontName !== $frontName) {
-                        $io->writeError(sprintf(
-                            '  <warning>Conflicting install frontName: already have "%s", ignoring "%s" from %s</warning>',
-                            self::$installFrontName,
-                            $frontName,
-                            $configFile,
-                        ));
-                    } else {
-                        self::$installFrontName = $frontName;
-                    }
-                }
-            }
         }
     }
 
     /**
-     * Build a reverse lookup map from Magento-style frontName/controller/action keys to route names.
+     * Resolve the frontName key used in both the reverseLookup/controllerLookup maps
+     * and the `_maho_front_name` route default. Admin/install use sentinels because
+     * their runtime frontName can differ from the compile-time one (use_custom_admin_path).
      *
-     * For PSR-4 modules, extractModuleName() returns 'Vendor\Module' while config.xml <args><module>
-     * typically uses 'Vendor_Module'. Both formats are tried so either convention works.
+     * @param array{area: string, path: string} $route
+     */
+    private static function resolveFrontNameKey(array $route): string
+    {
+        return match ($route['area']) {
+            'adminhtml' => self::ADMIN_SENTINEL,
+            'install' => self::INSTALL_SENTINEL,
+            default => explode('/', ltrim($route['path'], '/'))[0],
+        };
+    }
+
+    /**
+     * Build reverse-lookup maps keyed by frontName.
+     *
+     * - `reverseLookup`: frontName/controller/action → routeName (used by URL generation)
+     * - `controllerLookup`: frontName/controller → module class prefix (used by forward dispatch)
+     *
+     * Admin and install routes are keyed by a sentinel rather than the config.xml frontName,
+     * because the runtime admin frontName is configurable via `use_custom_admin_path`.
+     * The runtime translates the incoming frontName to the sentinel before lookup.
      */
     private static function buildReverseLookup(IOInterface $io): void
     {
         $reverseLookup = [];
+        $controllerLookup = [];
 
         foreach (self::$data['routes'] as $routeName => $route) {
-            $frontName = match ($route['area']) {
-                'adminhtml' => self::$adminFrontName,
-                'install' => self::$installFrontName,
-                default => self::$frontNameMap[$route['module']]
-                    ?? self::$frontNameMap[str_replace('\\', '_', $route['module'])]
-                    ?? null,
-            };
+            $frontName = self::resolveFrontNameKey($route);
 
-            if ($frontName === null) {
+            if ($frontName === '') {
                 if ($io->isVerbose()) {
                     $io->writeError(sprintf(
-                        '  <warning>No frontName found for module "%s", skipping reverse lookup for route "%s"</warning>',
-                        $route['module'],
+                        '  <warning>No frontName derivable from path "%s", skipping reverse lookup for route "%s"</warning>',
+                        $route['path'],
                         $routeName,
                     ));
                 }
@@ -683,11 +653,12 @@ final class AttributeCompiler
             }
 
             $action = strtolower((string) preg_replace('/Action$/', '', $route['action']));
-            $key = $frontName . '/' . $route['controllerName'] . '/' . $action;
-            $reverseLookup[$key] = $routeName;
+            $reverseLookup[$frontName . '/' . $route['controllerName'] . '/' . $action] = $routeName;
+            $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['module'];
         }
 
         self::$data['reverseLookup'] = $reverseLookup;
+        self::$data['controllerLookup'] = $controllerLookup;
     }
 
     /**
@@ -796,6 +767,59 @@ final class AttributeCompiler
         $content = '<?php return ' . var_export(self::$data, true) . ";\n";
         if (file_put_contents($outputDir . '/maho_attributes.php', $content) === false) {
             $io->writeError(sprintf('  <error>Failed to write %s/maho_attributes.php</error>', $outputDir));
+        }
+    }
+
+    /**
+     * Build a Symfony RouteCollection from compiled routes and dump pre-compiled
+     * matcher/generator arrays. The dumped files are plain PHP arrays, fully opcached,
+     * so URL matching and generation do no RouteCollection construction at runtime.
+     *
+     * Admin routes carry an `{_adminFrontName}` placeholder with a `/{_catchall}`
+     * suffix for the key/value param convention (e.g. /admin/foo/bar/id/5/store/1).
+     */
+    private static function dumpRoutingFiles(string $outputDir, IOInterface $io): void
+    {
+        if (self::$data['routes'] === []) {
+            return;
+        }
+
+        $collection = new RouteCollection();
+
+        foreach (self::$data['routes'] as $name => $route) {
+            $path = $route['path'];
+            $requirements = $route['requirements'];
+
+            $defaults = array_merge($route['defaults'], [
+                '_maho_controller' => $route['class'],
+                '_maho_action' => $route['action'],
+                '_maho_area' => $route['area'],
+                '_maho_module' => $route['module'],
+                '_maho_controller_name' => $route['controllerName'],
+                '_maho_front_name' => self::resolveFrontNameKey($route),
+            ]);
+
+            if ($route['area'] === 'adminhtml') {
+                $path = rtrim($path, '/') . '/{_catchall}';
+                $defaults['_catchall'] = '';
+                $requirements['_catchall'] = '.*';
+            }
+
+            $symfonyRoute = new SymfonyRoute($path, $defaults, $requirements);
+            if ($route['methods'] !== []) {
+                $symfonyRoute->setMethods($route['methods']);
+            }
+            $collection->add($name, $symfonyRoute);
+        }
+
+        $matcherDumper = new CompiledUrlMatcherDumper($collection);
+        if (file_put_contents($outputDir . '/maho_url_matcher.php', $matcherDumper->dump()) === false) {
+            $io->writeError(sprintf('  <error>Failed to write %s/maho_url_matcher.php</error>', $outputDir));
+        }
+
+        $generatorDumper = new CompiledUrlGeneratorDumper($collection);
+        if (file_put_contents($outputDir . '/maho_url_generator.php', $generatorDumper->dump()) === false) {
+            $io->writeError(sprintf('  <error>Failed to write %s/maho_url_generator.php</error>', $outputDir));
         }
     }
 }
