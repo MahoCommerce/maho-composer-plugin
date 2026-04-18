@@ -32,7 +32,6 @@ final class AttributeCompiler
      */
     private static array $classAliasMap = [];
 
-
     /**
      * Sentinel key for admin area in reverseLookup / controllerLookup.
      * Admin frontName is runtime-configurable (use_custom_admin_path), so routes are
@@ -326,11 +325,19 @@ final class AttributeCompiler
                 ));
             }
 
-            // Admin paths compile to a placeholder so the runtime admin frontName
-            // (use_custom_admin_path) can be injected without re-dumping the matcher.
+            // Admin paths compile with a `{_adminFrontName}` placeholder so the runtime
+            // admin frontName (use_custom_admin_path) can be injected per request.
+            // - Path starting with /admin: substitute the prefix with the placeholder.
+            // - Any other admin path: prepend the placeholder so third-party modules
+            //   can declare routes like #[Route('/foo', area: 'adminhtml')] without
+            //   needing to include the admin prefix themselves.
             $path = $route->path;
             if ($area === 'adminhtml') {
-                $path = (string) preg_replace('#^/admin(/|$)#', '/{_adminFrontName}$1', $path);
+                if (preg_match('#^/admin(/|$)#', $path) === 1) {
+                    $path = (string) preg_replace('#^/admin(/|$)#', '/{_adminFrontName}$1', $path);
+                } else {
+                    $path = '/{_adminFrontName}' . (str_starts_with($path, '/') ? '' : '/') . $path;
+                }
             }
 
             preg_match_all('/\{(\w+)\}/', $path, $pathVarMatches);
@@ -767,15 +774,25 @@ final class AttributeCompiler
      */
     private static function dumpRoutingFiles(string $outputDir, IOInterface $io): void
     {
+        if (self::$data['routes'] === []) {
+            return;
+        }
+
         $collection = new RouteCollection();
 
         foreach (self::$data['routes'] as $name => $route) {
             $path = $route['path'];
             $requirements = $route['requirements'];
 
-            // Frontend frontName is the first segment of the path; admin/install carry it
-            // via the `{_adminFrontName}` placeholder or the literal `install` segment.
-            $firstSegment = explode('/', ltrim($route['path'], '/'))[0];
+            // _maho_front_name is baked into defaults for runtime use (module/route name).
+            // Admin and install use sentinels because Symfony does not expand placeholders
+            // into default values — the literal string "{_adminFrontName}" would otherwise
+            // leak through. Frontend uses the first path segment.
+            $frontName = match ($route['area']) {
+                'adminhtml' => self::ADMIN_SENTINEL,
+                'install' => self::INSTALL_SENTINEL,
+                default => explode('/', ltrim($route['path'], '/'))[0],
+            };
 
             $defaults = array_merge($route['defaults'], [
                 '_maho_controller' => $route['class'],
@@ -783,7 +800,7 @@ final class AttributeCompiler
                 '_maho_area' => $route['area'],
                 '_maho_module' => $route['module'],
                 '_maho_controller_name' => $route['controllerName'],
-                '_maho_front_name' => $firstSegment,
+                '_maho_front_name' => $frontName,
             ]);
 
             if ($route['area'] === 'adminhtml') {
