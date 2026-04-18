@@ -608,6 +608,22 @@ final class AttributeCompiler
     }
 
     /**
+     * Resolve the frontName key used in both the reverseLookup/controllerLookup maps
+     * and the `_maho_front_name` route default. Admin/install use sentinels because
+     * their runtime frontName can differ from the compile-time one (use_custom_admin_path).
+     *
+     * @param array{area: string, path: string} $route
+     */
+    private static function resolveFrontNameKey(array $route): string
+    {
+        return match ($route['area']) {
+            'adminhtml' => self::ADMIN_SENTINEL,
+            'install' => self::INSTALL_SENTINEL,
+            default => explode('/', ltrim($route['path'], '/'))[0],
+        };
+    }
+
+    /**
      * Build reverse-lookup maps keyed by frontName.
      *
      * - `reverseLookup`: frontName/controller/action → routeName (used by URL generation)
@@ -616,9 +632,6 @@ final class AttributeCompiler
      * Admin and install routes are keyed by a sentinel rather than the config.xml frontName,
      * because the runtime admin frontName is configurable via `use_custom_admin_path`.
      * The runtime translates the incoming frontName to the sentinel before lookup.
-     *
-     * For PSR-4 modules, extractModuleName() returns 'Vendor\Module' while config.xml <args><module>
-     * typically uses 'Vendor_Module'. Both formats are tried so either convention works.
      */
     private static function buildReverseLookup(IOInterface $io): void
     {
@@ -626,14 +639,7 @@ final class AttributeCompiler
         $controllerLookup = [];
 
         foreach (self::$data['routes'] as $routeName => $route) {
-            // Frontend frontName is the first segment of the route path (e.g. '/catalog/...').
-            // Admin and install use sentinels because their runtime frontName can differ
-            // from the compile-time one (use_custom_admin_path).
-            $frontName = match ($route['area']) {
-                'adminhtml' => self::ADMIN_SENTINEL,
-                'install' => self::INSTALL_SENTINEL,
-                default => explode('/', ltrim($route['path'], '/'))[0],
-            };
+            $frontName = self::resolveFrontNameKey($route);
 
             if ($frontName === '') {
                 if ($io->isVerbose()) {
@@ -784,23 +790,13 @@ final class AttributeCompiler
             $path = $route['path'];
             $requirements = $route['requirements'];
 
-            // _maho_front_name is baked into defaults for runtime use (module/route name).
-            // Admin and install use sentinels because Symfony does not expand placeholders
-            // into default values — the literal string "{_adminFrontName}" would otherwise
-            // leak through. Frontend uses the first path segment.
-            $frontName = match ($route['area']) {
-                'adminhtml' => self::ADMIN_SENTINEL,
-                'install' => self::INSTALL_SENTINEL,
-                default => explode('/', ltrim($route['path'], '/'))[0],
-            };
-
             $defaults = array_merge($route['defaults'], [
                 '_maho_controller' => $route['class'],
                 '_maho_action' => $route['action'],
                 '_maho_area' => $route['area'],
                 '_maho_module' => $route['module'],
                 '_maho_controller_name' => $route['controllerName'],
-                '_maho_front_name' => $frontName,
+                '_maho_front_name' => self::resolveFrontNameKey($route),
             ]);
 
             if ($route['area'] === 'adminhtml') {
