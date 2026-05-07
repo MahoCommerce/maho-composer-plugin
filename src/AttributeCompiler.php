@@ -144,9 +144,12 @@ final class AttributeCompiler
      *
      * Modules disabled in app/etc/modules/*.xml (or with disabled dependencies) are skipped.
      *
+     * Visibility is package-internal so sibling compilers (e.g. ApiPermissionCompiler)
+     * can reuse the scan instead of paying its cost twice per `composer dump-autoload`.
+     *
      * @return array<class-string, string>
      */
-    private static function scanClasses(): array
+    public static function scanClasses(): array
     {
         $classes = [];
 

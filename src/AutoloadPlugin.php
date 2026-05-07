@@ -167,6 +167,16 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
             $event->getIO()->write('<info>Maho: Compiling PHP attributes...</info>');
             AttributeCompiler::compile($outputDir, $event->getIO());
             $event->getIO()->write('<info>Maho: PHP attributes compiled successfully.</info>');
+
+            // Defensive guard: the plugin can theoretically be installed in a
+            // project that hasn't pulled the Maho core (e.g. an extension dev
+            // sandbox). Skip the API permissions compile step in that case so
+            // dump-autoload doesn't fatal with a class-not-found.
+            if (class_exists(\Maho\Config\ApiResource::class)) {
+                $event->getIO()->write('<info>Maho: Compiling API permissions...</info>');
+                ApiPermissionCompiler::compile($outputDir, $event->getIO());
+                $event->getIO()->write('<info>Maho: API permissions compiled successfully.</info>');
+            }
         } finally {
             spl_autoload_unregister($autoloader);
         }
