@@ -101,10 +101,11 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
         $map = $this->parseModman($packageDir);
 
         // Fallback to extra.map array for compatibility with Cotya/magento-composer-installer
-        if (count($map) === 0 && is_array($package->getExtra()['map'] ?? null)) {
-            foreach ($package->getExtra()['map'] as [$source, $target]) {
-                if (is_string($source) && is_string($target)) {
-                    $map[] = [$source, $target];
+        $extraMap = $package->getExtra()['map'] ?? null;
+        if (count($map) === 0 && is_array($extraMap)) {
+            foreach ($extraMap as $entry) {
+                if (is_array($entry) && isset($entry[0], $entry[1]) && is_string($entry[0]) && is_string($entry[1])) {
+                    $map[] = [$entry[0], $entry[1]];
                 }
             }
         }

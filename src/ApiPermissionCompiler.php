@@ -5,7 +5,6 @@ namespace Maho\ComposerPlugin;
 use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
-use ApiPlatform\Metadata\GraphQl\Operation as GraphQlOperation;
 use ApiPlatform\Metadata\HttpOperation;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
@@ -73,7 +72,7 @@ final class ApiPermissionCompiler
         /** @var array<string, string> */
         $graphQlFieldMap = [];
 
-        $scannedClasses = AttributeCompiler::scanClasses();
+        $scannedClasses = AttributeCompiler::scanClasses($io);
 
         // Temporary classmap autoloader so class_exists()/ReflectionClass work
         // on every scanned class (mirrors AttributeCompiler).
@@ -86,7 +85,7 @@ final class ApiPermissionCompiler
 
         try {
             foreach ($scannedClasses as $className => $filePath) {
-                $contents = @file_get_contents($filePath);
+                $contents = file_get_contents($filePath);
                 if ($contents === false) {
                     continue;
                 }
@@ -135,15 +134,17 @@ final class ApiPermissionCompiler
                     // are a legitimate pattern (different uriTemplates / operation sets that
                     // share one permission identity). Merge silently — the second attribute's
                     // entry wins, but its segments/graphQlFields are unioned below.
-                    // Cross-class id collisions still warn (would mean two DTOs claim the
-                    // same permission, almost always a bug).
+                    // Cross-class id collisions are almost always a bug (two DTOs claiming the
+                    // same permission identity). Skip the second one entirely so the result
+                    // is deterministic regardless of ClassMapGenerator iteration order.
                     if (isset($resources[$id]) && $resources[$id]['_class'] !== $className) {
                         $io->writeError(sprintf(
-                            '  <warning>Duplicate ApiResource id "%s": %s and %s — second wins</warning>',
+                            '  <error>Duplicate ApiResource id "%s": %s and %s — first wins, second ignored</error>',
                             $id,
                             $resources[$id]['_class'],
                             $className,
                         ));
+                        continue;
                     }
 
                     $entry['_class'] = $className;
@@ -244,7 +245,7 @@ final class ApiPermissionCompiler
         // ---- label ----
         $label = $resource->mahoLabel ?? self::deriveLabelFromId($id);
 
-        // ---- group (always 'Storefront' today) ----
+        // ---- group ----
         $group = $resource->mahoGroup ?? 'Storefront';
 
         // ---- section (from namespace: Mage\Catalog\Api\Foo → 'Catalog') ----
@@ -308,16 +309,13 @@ final class ApiPermissionCompiler
     }
 
     /**
-     * 'cms-pages' → 'CMS Pages', 'products' → 'Products'.
-     * Acronyms get all-caps treatment when the kebab segment is ≤ 3 chars.
+     * 'cms-pages' → 'Cms Pages', 'products' → 'Products'.
+     * Title-cases each kebab segment; authors set `mahoLabel` explicitly when
+     * the result needs acronyms or other custom casing (e.g. 'CMS Pages').
      */
     private static function deriveLabelFromId(string $id): string
     {
-        $parts = explode('-', $id);
-        $words = array_map(static function (string $part): string {
-            return strlen($part) <= 3 ? strtoupper($part) : ucfirst($part);
-        }, $parts);
-        return implode(' ', $words);
+        return implode(' ', array_map('ucfirst', explode('-', $id)));
     }
 
     /**
