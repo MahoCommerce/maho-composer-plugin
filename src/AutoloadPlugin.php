@@ -170,9 +170,13 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
 
             // Defensive guard: the plugin can theoretically be installed in a
             // project that hasn't pulled the Maho core (e.g. an extension dev
-            // sandbox). Skip the API permissions compile step in that case so
-            // dump-autoload doesn't fatal with a class-not-found.
-            if (class_exists(\Maho\Config\ApiResource::class)) {
+            // sandbox), or one that has `composer replace`d api-platform/core
+            // out of the install. We check the parent class FIRST so the short-
+            // circuit avoids autoloading Maho\Config\ApiResource — which would
+            // fatal at parent-resolution time if api-platform/core is missing.
+            if (class_exists(\ApiPlatform\Metadata\ApiResource::class)
+                && class_exists(\Maho\Config\ApiResource::class)
+            ) {
                 $event->getIO()->write('<info>Maho: Compiling API permissions...</info>');
                 ApiPermissionCompiler::compile($outputDir, $event->getIO());
                 $event->getIO()->write('<info>Maho: API permissions compiled successfully.</info>');
