@@ -63,11 +63,10 @@ class ApiResource extends \ApiPlatform\Metadata\ApiResource
 {
     public ?string $mahoId;
     public ?string $mahoLabel;
-    public ?string $mahoGroup;
     public ?string $mahoSection;
     /** @var array<string, string>|null */
     public ?array $mahoOperations;
-    public bool $mahoPublicRead;
+    public ?bool $mahoPublicRead;
     public bool $mahoCustomerScoped;
     /** @var list<string>|null */
     public ?array $mahoRestSegments;

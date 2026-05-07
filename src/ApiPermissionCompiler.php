@@ -61,7 +61,7 @@ final class ApiPermissionCompiler
 
     public static function compile(string $outputDir, IOInterface $io): void
     {
-        /** @var array<string, array{label: string, group: string, section: string, operations: array<string, string>, _class: class-string}> */
+        /** @var array<string, array{label: string, section: string, operations: array<string, string>, _class: class-string}> */
         $resources       = [];
         /** @var array<string, true> */
         $publicRead      = [];
@@ -150,7 +150,7 @@ final class ApiPermissionCompiler
                     $entry['_class'] = $className;
                     $resources[$id] = $entry;
 
-                    if ($resource->mahoPublicRead) {
+                    if ($resource->mahoPublicRead ?? self::deriveIsPublicRead($resource)) {
                         $publicRead[$id] = true;
                     }
                     if ($resource->mahoCustomerScoped) {
@@ -223,7 +223,7 @@ final class ApiPermissionCompiler
      * @param ReflectionClass<object> $reflection
      * @return array{
      *     id: string,
-     *     entry: array{label: string, group: string, section: string, operations: array<string, string>},
+     *     entry: array{label: string, section: string, operations: array<string, string>},
      *     segments: list<string>,
      *     graphQlFields: list<string>,
      * }|null
@@ -244,9 +244,6 @@ final class ApiPermissionCompiler
 
         // ---- label ----
         $label = $resource->mahoLabel ?? self::deriveLabelFromId($id);
-
-        // ---- group ----
-        $group = $resource->mahoGroup ?? 'Storefront';
 
         // ---- section (from namespace: Mage\Catalog\Api\Foo → 'Catalog') ----
         $section = $resource->mahoSection ?? self::deriveSectionFromNamespace($reflection->getName());
@@ -271,7 +268,6 @@ final class ApiPermissionCompiler
 
         $entry = [
             'label' => $label,
-            'group' => $group,
             'section' => $section,
             'operations' => $operations,
         ];
@@ -388,6 +384,38 @@ final class ApiPermissionCompiler
             };
         }
         return null;
+    }
+
+    /**
+     * Public-read = every read operation (Get/GetCollection or HttpOperation
+     * whose method is GET/HEAD) has `security: 'true'` (literally, after trim).
+     *
+     * Returns false if there are no read operations at all (no read = no
+     * public read). Authors override `mahoPublicRead` explicitly when their
+     * security expression doesn't match the literal `'true'` form (rare).
+     */
+    private static function deriveIsPublicRead(ApiResource $resource): bool
+    {
+        $ops = $resource->getOperations();
+        if ($ops === null) {
+            return false;
+        }
+
+        $sawRead = false;
+        foreach ($ops as $op) {
+            if (self::classifyOperation($op) !== 'read') {
+                continue;
+            }
+            $sawRead = true;
+            if (!$op instanceof HttpOperation) {
+                return false;
+            }
+            $security = $op->getSecurity();
+            if (!is_string($security) || trim($security) !== 'true') {
+                return false;
+            }
+        }
+        return $sawRead;
     }
 
     /**
