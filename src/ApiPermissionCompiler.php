@@ -24,8 +24,8 @@ use ReflectionClass;
  *
  * Most fields are auto-derived from the API Platform metadata on the same
  * attribute — see `derivePermissionData()`. Authors only set the maho-specific
- * fields (`mahoPublicRead`, `mahoCustomerScoped`, `mahoDescription`) plus
- * occasional overrides when defaults are wrong.
+ * fields (`mahoPublicRead`, `mahoCustomerScoped`) plus occasional overrides
+ * when defaults are wrong.
  *
  * Must run after `AttributeCompiler::compile()` in the same process so the
  * `scanClasses()` active-module filter is already populated.
@@ -154,7 +154,7 @@ final class ApiPermissionCompiler
                         $publicRead[$id] = true;
                     }
                     if ($resource->mahoCustomerScoped) {
-                        $customerScoped[$id] = $resource->mahoDescription ?? '';
+                        $customerScoped[$id] = $resource->getDescription() ?? '';
                     }
 
                     foreach ($segments as $segment) {
