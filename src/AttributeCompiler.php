@@ -25,6 +25,20 @@ final class AttributeCompiler
     private static ?array $activeModules = null;
 
     /**
+     * Tracks whether buildActiveModules() has run. Distinct from $activeModules being null
+     * (which legitimately means "no XMLs found, treat all as active").
+     */
+    private static bool $activeModulesBuilt = false;
+
+    /**
+     * Memoised result of scanClasses(). Process-scoped — composer dump-autoload runs in
+     * short-lived processes so a per-process cache is sufficient.
+     *
+     * @var array<class-string, string>|null
+     */
+    private static ?array $scannedClassesCache = null;
+
+    /**
      * Map of class prefix → model group alias built from config.xml files.
      * e.g. 'Mage_Newsletter_Model' => 'newsletter'
      *
@@ -144,10 +158,23 @@ final class AttributeCompiler
      *
      * Modules disabled in app/etc/modules/*.xml (or with disabled dependencies) are skipped.
      *
+     * Result is memoised per process so sibling compilers (e.g. ApiPermissionCompiler)
+     * can reuse the scan without paying its cost twice per `composer dump-autoload`.
+     * The active-module filter is built lazily on first call when not already populated,
+     * so this method can be invoked standalone without a prior compile() call.
+     *
      * @return array<class-string, string>
      */
-    private static function scanClasses(): array
+    public static function scanClasses(?IOInterface $io = null): array
     {
+        if (self::$scannedClassesCache !== null) {
+            return self::$scannedClassesCache;
+        }
+
+        if (!self::$activeModulesBuilt) {
+            self::buildActiveModules($io ?? new \Composer\IO\NullIO());
+        }
+
         $classes = [];
 
         // Legacy code pool: app/code/{pool}/{Namespace}/{Module}/
@@ -172,7 +199,7 @@ final class AttributeCompiler
             }
         }
 
-        return $classes;
+        return self::$scannedClassesCache = $classes;
     }
 
     /**
@@ -503,6 +530,7 @@ final class AttributeCompiler
      */
     private static function buildActiveModules(IOInterface $io): void
     {
+        self::$activeModulesBuilt = true;
         self::$activeModules = null;
 
         $moduleXmls = AutoloadRuntime::globPackages('/app/etc/modules/*.xml');

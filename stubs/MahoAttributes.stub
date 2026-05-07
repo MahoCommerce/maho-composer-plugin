@@ -52,3 +52,26 @@ class Route
     ) {
     }
 }
+
+// Stub for the Maho-flavoured ApiResource subclass. Real definition lives in
+// `lib/Maho/Config/ApiResource.php` in mahocommerce/maho. The parent class
+// (`ApiPlatform\Metadata\ApiResource`) and its operation classes are pulled
+// in via api-platform/core in this plugin's require-dev, so phpstan can
+// resolve the full class hierarchy through inheritance.
+#[\Attribute(\Attribute::TARGET_CLASS | \Attribute::IS_REPEATABLE)]
+class ApiResource extends \ApiPlatform\Metadata\ApiResource
+{
+    public ?string $mahoId;
+    public ?string $mahoLabel;
+    public ?string $mahoGroup;
+    public ?string $mahoSection;
+    /** @var array<string, string>|null */
+    public ?array $mahoOperations;
+    public bool $mahoPublicRead;
+    public bool $mahoCustomerScoped;
+    /** @var list<string>|null */
+    public ?array $mahoRestSegments;
+    /** @var list<string>|null */
+    public ?array $mahoGraphQlFields;
+    public ?string $mahoDescription;
+}
