@@ -61,6 +61,45 @@ final class ApiPermissionCompiler
 
     public static function compile(string $outputDir, IOInterface $io): void
     {
+        self::doCompile($outputDir, self::ioToLog($io));
+    }
+
+    /**
+     * Compile API permissions at runtime (no composer/composer dependency).
+     *
+     * @param \Closure(string, string): void|null $log
+     */
+    public static function compileRuntime(string $outputDir, ?\Closure $log = null): void
+    {
+        self::doCompile($outputDir, $log);
+    }
+
+    /**
+     * @return \Closure(string, string): void
+     */
+    private static function ioToLog(IOInterface $io): \Closure
+    {
+        return static function (string $level, string $message) use ($io): void {
+            if ($level === 'info' && !$io->isVerbose()) {
+                return;
+            }
+            $tag = match ($level) {
+                'error', 'warning' => $level,
+                default => 'info',
+            };
+            $io->writeError(sprintf('  <%s>%s</%s>', $tag, $message, $tag));
+        };
+    }
+
+    private static function logf(?\Closure $log, string $level, string $format, int|float|string|bool|null ...$args): void
+    {
+        if ($log !== null) {
+            $log($level, sprintf($format, ...$args));
+        }
+    }
+
+    private static function doCompile(string $outputDir, ?\Closure $log): void
+    {
         /** @var array<string, array{label: string, section: string, operations: array<string, string>, _class: class-string}> */
         $resources       = [];
         /** @var array<string, true> */
@@ -72,7 +111,7 @@ final class ApiPermissionCompiler
         /** @var array<string, string> */
         $graphQlFieldMap = [];
 
-        $scannedClasses = AttributeCompiler::scanClasses($io);
+        $scannedClasses = AttributeCompiler::scanClasses($log);
 
         // Temporary classmap autoloader so class_exists()/ReflectionClass work
         // on every scanned class (mirrors AttributeCompiler).
@@ -112,15 +151,17 @@ final class ApiPermissionCompiler
                     try {
                         $resource = $attribute->newInstance();
                     } catch (\Throwable $e) {
-                        $io->writeError(sprintf(
-                            '  <warning>Skipping Maho\Config\ApiResource on %s: %s</warning>',
+                        self::logf(
+                            $log,
+                            'warning',
+                            'Skipping Maho\Config\ApiResource on %s: %s',
                             $className,
                             $e->getMessage(),
-                        ));
+                        );
                         continue;
                     }
 
-                    $data = self::derivePermissionData($resource, $reflection, $io);
+                    $data = self::derivePermissionData($resource, $reflection, $log);
                     if ($data === null) {
                         continue; // attribute opted out (e.g. no derivable id)
                     }
@@ -138,12 +179,14 @@ final class ApiPermissionCompiler
                     // same permission identity). Skip the second one entirely so the result
                     // is deterministic regardless of ClassMapGenerator iteration order.
                     if (isset($resources[$id]) && $resources[$id]['_class'] !== $className) {
-                        $io->writeError(sprintf(
-                            '  <error>Duplicate ApiResource id "%s": %s and %s — first wins, second ignored</error>',
+                        self::logf(
+                            $log,
+                            'error',
+                            'Duplicate ApiResource id "%s": %s and %s — first wins, second ignored',
                             $id,
                             $resources[$id]['_class'],
                             $className,
-                        ));
+                        );
                         continue;
                     }
 
@@ -159,24 +202,28 @@ final class ApiPermissionCompiler
 
                     foreach ($segments as $segment) {
                         if (isset($segmentMap[$segment]) && $segmentMap[$segment] !== $id) {
-                            $io->writeError(sprintf(
-                                '  <warning>REST segment "%s" mapped to both "%s" and "%s"</warning>',
+                            self::logf(
+                                $log,
+                                'warning',
+                                'REST segment "%s" mapped to both "%s" and "%s"',
                                 $segment,
                                 $segmentMap[$segment],
                                 $id,
-                            ));
+                            );
                         }
                         $segmentMap[$segment] = $id;
                     }
 
                     foreach ($graphQlFields as $field) {
                         if (isset($graphQlFieldMap[$field]) && $graphQlFieldMap[$field] !== $id) {
-                            $io->writeError(sprintf(
-                                '  <warning>GraphQL field "%s" mapped to both "%s" and "%s"</warning>',
+                            self::logf(
+                                $log,
+                                'warning',
+                                'GraphQL field "%s" mapped to both "%s" and "%s"',
                                 $field,
                                 $graphQlFieldMap[$field],
                                 $id,
-                            ));
+                            );
                         }
                         $graphQlFieldMap[$field] = $id;
                     }
@@ -208,7 +255,7 @@ final class ApiPermissionCompiler
 
         $content = '<?php return ' . var_export($data, true) . ";\n";
         if (!AttributeCompiler::atomicWrite($outputDir . '/maho_api_permissions.php', $content)) {
-            $io->writeError(sprintf('  <error>Failed to write %s/maho_api_permissions.php</error>', $outputDir));
+            self::logf($log, 'error', 'Failed to write %s/maho_api_permissions.php', $outputDir);
         }
     }
 
@@ -228,17 +275,19 @@ final class ApiPermissionCompiler
      *     graphQlFields: list<string>,
      * }|null
      */
-    private static function derivePermissionData(ApiResource $resource, ReflectionClass $reflection, IOInterface $io): ?array
+    private static function derivePermissionData(ApiResource $resource, ReflectionClass $reflection, ?\Closure $log): ?array
     {
         // ---- id ----
         $id = $resource->mahoId ?? self::deriveIdFromShortName(
             $resource->getShortName() ?? $reflection->getShortName(),
         );
         if ($id === '') {
-            $io->writeError(sprintf(
-                '  <warning>Cannot derive resource id for %s — set mahoId explicitly</warning>',
+            self::logf(
+                $log,
+                'warning',
+                'Cannot derive resource id for %s — set mahoId explicitly',
                 $reflection->getName(),
-            ));
+            );
             return null;
         }
 

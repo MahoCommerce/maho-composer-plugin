@@ -2,7 +2,6 @@
 
 namespace Maho\ComposerPlugin;
 
-use Composer\ClassMapGenerator\ClassMapGenerator;
 use Composer\IO\IOInterface;
 use Maho\Config\CronJob;
 use Maho\Config\Observer;
@@ -71,11 +70,30 @@ final class AttributeCompiler
     private static array $data;
 
     /**
-     * Compile PHP attributes into a cached array file.
+     * Compile PHP attributes into a cached array file (composer-time entry point).
      *
      * @param string $outputDir Directory where attributes.php will be written
      */
     public static function compile(string $outputDir, IOInterface $io): void
+    {
+        self::doCompile($outputDir, self::ioToLog($io));
+    }
+
+    /**
+     * Compile PHP attributes at runtime (no composer/composer dependency).
+     *
+     * The optional logger receives `(string $level, string $message)` for any
+     * warnings/errors emitted during compilation. Pass null for silent operation.
+     *
+     * @param \Closure(string, string): void|null $log
+     */
+    public static function compileRuntime(string $outputDir, ?\Closure $log = null): void
+    {
+        self::resetState();
+        self::doCompile($outputDir, $log);
+    }
+
+    private static function doCompile(string $outputDir, ?\Closure $log): void
     {
         self::$data = [
             'observers' => [],
@@ -87,8 +105,8 @@ final class AttributeCompiler
 
         $replaces = [];
 
-        self::buildActiveModules($io);
-        self::buildConfigMaps($io);
+        self::buildActiveModules($log);
+        self::buildConfigMaps($log);
 
         $scannedClasses = self::scanClasses();
 
@@ -131,9 +149,9 @@ final class AttributeCompiler
                         continue;
                     }
 
-                    self::processObserverAttributes($method, $className, $replaces, $io);
-                    self::processCronJobAttributes($method, $className, $io);
-                    self::processRouteAttributes($method, $className, $io);
+                    self::processObserverAttributes($method, $className, $replaces, $log);
+                    self::processCronJobAttributes($method, $className, $log);
+                    self::processRouteAttributes($method, $className, $log);
                 }
             }
         } finally {
@@ -141,9 +159,166 @@ final class AttributeCompiler
         }
 
         self::applyReplaces($replaces);
-        self::buildReverseLookup($io);
-        self::writeOutput($outputDir, $io);
-        self::dumpRoutingFiles($outputDir, $io);
+        self::buildReverseLookup($log);
+        self::writeOutput($outputDir, $log);
+        self::dumpRoutingFiles($outputDir, $log);
+    }
+
+    /**
+     * Reset process-scoped caches so a runtime recompile picks up changes.
+     */
+    private static function resetState(): void
+    {
+        self::$activeModules = null;
+        self::$activeModulesBuilt = false;
+        self::$scannedClassesCache = null;
+        self::$classAliasMap = [];
+    }
+
+    /**
+     * Adapter: turn an IOInterface (composer-time) into the closure logger
+     * used by the rest of the compiler.
+     *
+     * @return \Closure(string, string): void
+     */
+    private static function ioToLog(IOInterface $io): \Closure
+    {
+        return static function (string $level, string $message) use ($io): void {
+            // Info-level messages are debug noise at composer-time — only emit when verbose.
+            if ($level === 'info' && !$io->isVerbose()) {
+                return;
+            }
+            $tag = match ($level) {
+                'error', 'warning' => $level,
+                default => 'info',
+            };
+            $io->writeError(sprintf('  <%s>%s</%s>', $tag, $message, $tag));
+        };
+    }
+
+    /**
+     * Emit a formatted log message via the optional logger, if any.
+     */
+    private static function logf(?\Closure $log, string $level, string $format, int|float|string|bool|null ...$args): void
+    {
+        if ($log !== null) {
+            $log($level, sprintf($format, ...$args));
+        }
+    }
+
+    /**
+     * Token-based replacement for Composer\ClassMapGenerator. Returns
+     * a class-string => file-path map for every PHP class/interface/trait/enum
+     * declared under $dir. Skips anonymous classes.
+     *
+     * @return array<class-string, string>
+     */
+    private static function createClassMap(string $dir): array
+    {
+        if (!is_dir($dir)) {
+            return [];
+        }
+
+        $classes = [];
+        $directoryIter = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
+        // Skip vendor/, node_modules/, and dotdirs (.git, .idea, etc.) — these never
+        // contain user-authored Maho classes, and recursing into vendor/ from the
+        // project root tries to autoload the plugin's own composer-plugin classes.
+        $filtered = new \RecursiveCallbackFilterIterator(
+            $directoryIter,
+            static function (\SplFileInfo $current): bool {
+                if (!$current->isDir()) {
+                    return true;
+                }
+                $name = $current->getFilename();
+                return $name !== 'vendor' && $name !== 'node_modules' && !str_starts_with($name, '.');
+            },
+        );
+        $iter = new \RecursiveIteratorIterator($filtered, \RecursiveIteratorIterator::LEAVES_ONLY);
+
+        foreach ($iter as $file) {
+            if (!$file instanceof \SplFileInfo || $file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $contents = @file_get_contents($file->getPathname());
+            if ($contents === false) {
+                continue;
+            }
+
+            // Cheap rejection: file must contain at least one declaration keyword.
+            if (preg_match('/\b(?:class|interface|trait|enum)\b/i', $contents) !== 1) {
+                continue;
+            }
+
+            foreach (self::extractClassesFromTokens($contents) as $class) {
+                /** @var class-string $class */
+                $classes[$class] = $file->getPathname();
+            }
+        }
+
+        return $classes;
+    }
+
+    /**
+     * Extract fully-qualified class/interface/trait/enum names declared in $contents.
+     *
+     * @return list<string>
+     */
+    private static function extractClassesFromTokens(string $contents): array
+    {
+        $tokens = @token_get_all($contents);
+        $classes = [];
+        $namespace = '';
+        $count = count($tokens);
+
+        for ($i = 0; $i < $count; $i++) {
+            $token = $tokens[$i];
+            if (!is_array($token)) {
+                continue;
+            }
+
+            switch ($token[0]) {
+                case T_NAMESPACE:
+                    $ns = '';
+                    for ($j = $i + 1; $j < $count; $j++) {
+                        $t = $tokens[$j];
+                        if (is_string($t) && ($t === ';' || $t === '{')) {
+                            break;
+                        }
+                        if (is_array($t) && in_array($t[0], [T_STRING, T_NS_SEPARATOR, T_NAME_QUALIFIED, T_NAME_FULLY_QUALIFIED], true)) {
+                            $ns .= $t[1];
+                        }
+                    }
+                    $namespace = $ns;
+                    break;
+
+                case T_CLASS:
+                case T_INTERFACE:
+                case T_TRAIT:
+                case T_ENUM:
+                    // Skip Foo::class syntax.
+                    $prev = $i > 0 ? $tokens[$i - 1] : null;
+                    if (is_array($prev) && $prev[0] === T_DOUBLE_COLON) {
+                        break;
+                    }
+                    // Find the next T_STRING (class name); abort on `(` (anonymous class) or `{` (no name).
+                    for ($j = $i + 1; $j < $count; $j++) {
+                        $t = $tokens[$j];
+                        if (is_string($t) && ($t === '(' || $t === '{')) {
+                            break;
+                        }
+                        if (is_array($t) && $t[0] === T_STRING) {
+                            $classes[] = ($namespace !== '' ? $namespace . '\\' : '') . $t[1];
+                            $i = $j;
+                            break;
+                        }
+                    }
+                    break;
+            }
+        }
+
+        return $classes;
     }
 
     /**
@@ -165,14 +340,14 @@ final class AttributeCompiler
      *
      * @return array<class-string, string>
      */
-    public static function scanClasses(?IOInterface $io = null): array
+    public static function scanClasses(?\Closure $log = null): array
     {
         if (self::$scannedClassesCache !== null) {
             return self::$scannedClassesCache;
         }
 
         if (!self::$activeModulesBuilt) {
-            self::buildActiveModules($io ?? new \Composer\IO\NullIO());
+            self::buildActiveModules($log);
         }
 
         $classes = [];
@@ -185,7 +360,7 @@ final class AttributeCompiler
                     continue;
                 }
             }
-            foreach (ClassMapGenerator::createMap($moduleDir) as $class => $file) {
+            foreach (self::createClassMap($moduleDir) as $class => $file) {
                 $classes[$class] = $file;
             }
         }
@@ -194,7 +369,7 @@ final class AttributeCompiler
         $packages = AutoloadRuntime::getInstalledPackages();
         unset($packages['root']);
         foreach ($packages as $info) {
-            foreach (ClassMapGenerator::createMap($info['path']) as $class => $file) {
+            foreach (self::createClassMap($info['path']) as $class => $file) {
                 $classes[$class] = $file;
             }
         }
@@ -209,19 +384,21 @@ final class AttributeCompiler
         ReflectionMethod $method,
         string $className,
         array &$replaces,
-        IOInterface $io,
+        ?\Closure $log,
     ): void {
         $attributes = $method->getAttributes(Observer::class);
         foreach ($attributes as $attribute) {
             try {
                 $observer = $attribute->newInstance();
             } catch (\Throwable $e) {
-                $io->writeError(sprintf(
-                    '  <warning>Skipping Observer attribute on %s::%s: %s</warning>',
+                self::logf(
+                    $log,
+                    'warning',
+                    'Skipping Observer attribute on %s::%s: %s',
                     $className,
                     $method->getName(),
                     $e->getMessage(),
-                ));
+                );
                 continue;
             }
 
@@ -245,12 +422,14 @@ final class AttributeCompiler
 
                 foreach (self::$data['observers'][$area][$event] as $existing) {
                     if ($existing['name'] === $name) {
-                        $io->writeError(sprintf(
-                            '  <warning>Duplicate observer name "%s" on %s/%s</warning>',
+                        self::logf(
+                            $log,
+                            'warning',
+                            'Duplicate observer name "%s" on %s/%s',
                             $name,
                             $area,
                             $event,
-                        ));
+                        );
                         break;
                     }
                 }
@@ -271,42 +450,48 @@ final class AttributeCompiler
     private static function processCronJobAttributes(
         ReflectionMethod $method,
         string $className,
-        IOInterface $io,
+        ?\Closure $log,
     ): void {
         $attributes = $method->getAttributes(CronJob::class);
         foreach ($attributes as $attribute) {
             try {
                 $cronJob = $attribute->newInstance();
             } catch (\Throwable $e) {
-                $io->writeError(sprintf(
-                    '  <warning>Skipping CronJob attribute on %s::%s: %s</warning>',
+                self::logf(
+                    $log,
+                    'warning',
+                    'Skipping CronJob attribute on %s::%s: %s',
                     $className,
                     $method->getName(),
                     $e->getMessage(),
-                ));
+                );
                 continue;
             }
 
             if ($cronJob->schedule === null && $cronJob->configPath === null) {
-                $io->writeError(sprintf(
-                    '  <warning>CronJob on %s::%s has neither schedule nor config_path, skipping</warning>',
+                self::logf(
+                    $log,
+                    'warning',
+                    'CronJob on %s::%s has neither schedule nor config_path, skipping',
                     $className,
                     $method->getName(),
-                ));
+                );
                 continue;
             }
 
             $name = $cronJob->id;
 
             if (isset(self::$data['crontab'][$name])) {
-                $io->writeError(sprintf(
-                    '  <warning>CronJob name "%s" on %s::%s overwrites %s::%s</warning>',
+                self::logf(
+                    $log,
+                    'warning',
+                    'CronJob name "%s" on %s::%s overwrites %s::%s',
                     $name,
                     $className,
                     $method->getName(),
                     self::$data['crontab'][$name]['alias'],
                     self::$data['crontab'][$name]['method'],
-                ));
+                );
             }
 
             self::$data['crontab'][$name] = [
@@ -322,34 +507,38 @@ final class AttributeCompiler
     private static function processRouteAttributes(
         ReflectionMethod $method,
         string $className,
-        IOInterface $io,
+        ?\Closure $log,
     ): void {
         $attributes = $method->getAttributes(Route::class);
         foreach ($attributes as $attribute) {
             try {
                 $route = $attribute->newInstance();
             } catch (\Throwable $e) {
-                $io->writeError(sprintf(
-                    '  <warning>Skipping Route attribute on %s::%s: %s</warning>',
+                self::logf(
+                    $log,
+                    'warning',
+                    'Skipping Route attribute on %s::%s: %s',
                     $className,
                     $method->getName(),
                     $e->getMessage(),
-                ));
+                );
                 continue;
             }
 
             $name = $route->name ?? self::generateRouteName($className, $method->getName());
-            $area = $route->area ?? self::detectControllerArea($className, $io);
+            $area = $route->area ?? self::detectControllerArea($className, $log);
 
             if (isset(self::$data['routes'][$name])) {
-                $io->writeError(sprintf(
-                    '  <warning>Duplicate route name "%s" on %s::%s overwrites %s::%s</warning>',
+                self::logf(
+                    $log,
+                    'warning',
+                    'Duplicate route name "%s" on %s::%s overwrites %s::%s',
                     $name,
                     $className,
                     $method->getName(),
                     self::$data['routes'][$name]['class'],
                     self::$data['routes'][$name]['action'],
-                ));
+                );
             }
 
             // Admin paths compile with a `{_adminFrontName}` placeholder so the runtime
@@ -413,13 +602,15 @@ final class AttributeCompiler
     /**
      * Detect the area from the controller's class hierarchy.
      */
-    private static function detectControllerArea(string $className, IOInterface $io): string
+    private static function detectControllerArea(string $className, ?\Closure $log): string
     {
         if (!class_exists($className)) {
-            $io->writeError(sprintf(
-                '  <warning>Cannot load class %s for area detection, defaulting to frontend</warning>',
+            self::logf(
+                $log,
+                'warning',
+                'Cannot load class %s for area detection, defaulting to frontend',
                 $className,
-            ));
+            );
             return 'frontend';
         }
         $ref = new ReflectionClass($className);
@@ -528,7 +719,7 @@ final class AttributeCompiler
      * Sets self::$activeModules to a name→true map of active modules,
      * or leaves it null when no module XMLs are found (treat all modules as active).
      */
-    private static function buildActiveModules(IOInterface $io): void
+    private static function buildActiveModules(?\Closure $log): void
     {
         self::$activeModulesBuilt = true;
         self::$activeModules = null;
@@ -545,7 +736,7 @@ final class AttributeCompiler
         foreach ($moduleXmls as $xmlFile) {
             $xml = @simplexml_load_file($xmlFile);
             if ($xml === false) {
-                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping</warning>', $xmlFile));
+                self::logf($log, 'warning', 'Failed to parse %s, skipping', $xmlFile);
                 continue;
             }
             foreach ($xml->modules->children() ?? [] as $moduleName => $moduleConfig) {
@@ -605,7 +796,7 @@ final class AttributeCompiler
      * Parse <global><models|helpers|blocks><group><class> across all module config.xml files
      * to build the class-alias map (e.g. 'Mage_Newsletter_Model' => 'newsletter').
      */
-    private static function buildConfigMaps(IOInterface $io): void
+    private static function buildConfigMaps(?\Closure $log): void
     {
         self::$classAliasMap = [];
 
@@ -620,7 +811,7 @@ final class AttributeCompiler
 
             $xml = @simplexml_load_file($configFile);
             if ($xml === false) {
-                $io->writeError(sprintf('  <warning>Failed to parse %s, skipping config maps for this module</warning>', $configFile));
+                self::logf($log, 'warning', 'Failed to parse %s, skipping config maps for this module', $configFile);
                 continue;
             }
 
@@ -661,7 +852,7 @@ final class AttributeCompiler
      * because the runtime admin frontName is configurable via `use_custom_admin_path`.
      * The runtime translates the incoming frontName to the sentinel before lookup.
      */
-    private static function buildReverseLookup(IOInterface $io): void
+    private static function buildReverseLookup(?\Closure $log): void
     {
         $reverseLookup = [];
         $controllerLookup = [];
@@ -670,13 +861,13 @@ final class AttributeCompiler
             $frontName = self::resolveFrontNameKey($route);
 
             if ($frontName === '') {
-                if ($io->isVerbose()) {
-                    $io->writeError(sprintf(
-                        '  <warning>No frontName derivable from path "%s", skipping reverse lookup for route "%s"</warning>',
-                        $route['path'],
-                        $routeName,
-                    ));
-                }
+                self::logf(
+                    $log,
+                    'info',
+                    'No frontName derivable from path "%s", skipping reverse lookup for route "%s"',
+                    $route['path'],
+                    $routeName,
+                );
                 continue;
             }
 
@@ -790,11 +981,11 @@ final class AttributeCompiler
         return $className;
     }
 
-    private static function writeOutput(string $outputDir, IOInterface $io): void
+    private static function writeOutput(string $outputDir, ?\Closure $log): void
     {
         $content = '<?php return ' . var_export(self::$data, true) . ";\n";
         if (!self::atomicWrite($outputDir . '/maho_attributes.php', $content)) {
-            $io->writeError(sprintf('  <error>Failed to write %s/maho_attributes.php</error>', $outputDir));
+            self::logf($log, 'error', 'Failed to write %s/maho_attributes.php', $outputDir);
         }
     }
 
@@ -824,7 +1015,7 @@ final class AttributeCompiler
      * Admin routes carry an `{_adminFrontName}` placeholder with a `/{_catchall}`
      * suffix for the key/value param convention (e.g. /admin/foo/bar/id/5/store/1).
      */
-    private static function dumpRoutingFiles(string $outputDir, IOInterface $io): void
+    private static function dumpRoutingFiles(string $outputDir, ?\Closure $log): void
     {
         if (self::$data['routes'] === []) {
             return;
@@ -860,12 +1051,12 @@ final class AttributeCompiler
 
         $matcherDumper = new CompiledUrlMatcherDumper($collection);
         if (!self::atomicWrite($outputDir . '/maho_url_matcher.php', $matcherDumper->dump())) {
-            $io->writeError(sprintf('  <error>Failed to write %s/maho_url_matcher.php</error>', $outputDir));
+            self::logf($log, 'error', 'Failed to write %s/maho_url_matcher.php', $outputDir);
         }
 
         $generatorDumper = new CompiledUrlGeneratorDumper($collection);
         if (!self::atomicWrite($outputDir . '/maho_url_generator.php', $generatorDumper->dump())) {
-            $io->writeError(sprintf('  <error>Failed to write %s/maho_url_generator.php</error>', $outputDir));
+            self::logf($log, 'error', 'Failed to write %s/maho_url_generator.php', $outputDir);
         }
     }
 }
