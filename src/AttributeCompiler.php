@@ -793,9 +793,27 @@ final class AttributeCompiler
     private static function writeOutput(string $outputDir, IOInterface $io): void
     {
         $content = '<?php return ' . var_export(self::$data, true) . ";\n";
-        if (file_put_contents($outputDir . '/maho_attributes.php', $content) === false) {
+        if (!self::atomicWrite($outputDir . '/maho_attributes.php', $content)) {
             $io->writeError(sprintf('  <error>Failed to write %s/maho_attributes.php</error>', $outputDir));
         }
+    }
+
+    /**
+     * Write content to $path atomically: write to a unique temp file in the same
+     * directory, then rename(). rename() is atomic on the same filesystem, so
+     * concurrent readers either see the old file or the new one — never a torn write.
+     */
+    public static function atomicWrite(string $path, string $content): bool
+    {
+        $tmp = $path . '.' . bin2hex(random_bytes(6)) . '.tmp';
+        if (file_put_contents($tmp, $content) === false) {
+            return false;
+        }
+        if (!rename($tmp, $path)) {
+            @unlink($tmp);
+            return false;
+        }
+        return true;
     }
 
     /**
@@ -841,12 +859,12 @@ final class AttributeCompiler
         }
 
         $matcherDumper = new CompiledUrlMatcherDumper($collection);
-        if (file_put_contents($outputDir . '/maho_url_matcher.php', $matcherDumper->dump()) === false) {
+        if (!self::atomicWrite($outputDir . '/maho_url_matcher.php', $matcherDumper->dump())) {
             $io->writeError(sprintf('  <error>Failed to write %s/maho_url_matcher.php</error>', $outputDir));
         }
 
         $generatorDumper = new CompiledUrlGeneratorDumper($collection);
-        if (file_put_contents($outputDir . '/maho_url_generator.php', $generatorDumper->dump()) === false) {
+        if (!self::atomicWrite($outputDir . '/maho_url_generator.php', $generatorDumper->dump())) {
             $io->writeError(sprintf('  <error>Failed to write %s/maho_url_generator.php</error>', $outputDir));
         }
     }

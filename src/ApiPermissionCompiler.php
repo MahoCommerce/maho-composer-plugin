@@ -207,7 +207,7 @@ final class ApiPermissionCompiler
         ];
 
         $content = '<?php return ' . var_export($data, true) . ";\n";
-        if (file_put_contents($outputDir . '/maho_api_permissions.php', $content) === false) {
+        if (!AttributeCompiler::atomicWrite($outputDir . '/maho_api_permissions.php', $content)) {
             $io->writeError(sprintf('  <error>Failed to write %s/maho_api_permissions.php</error>', $outputDir));
         }
     }
@@ -407,9 +407,6 @@ final class ApiPermissionCompiler
                 continue;
             }
             $sawRead = true;
-            if (!$op instanceof HttpOperation) {
-                return false;
-            }
             $security = $op->getSecurity();
             if (!is_string($security) || trim($security) !== 'true') {
                 return false;
