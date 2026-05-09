@@ -846,7 +846,13 @@ final class AttributeCompiler
      * Build reverse-lookup maps keyed by frontName.
      *
      * - `reverseLookup`: frontName/controller/action → routeName (used by URL generation)
-     * - `controllerLookup`: frontName/controller → module class prefix (used by forward dispatch)
+     * - `controllerLookup`: frontName/controller → controller class FQCN (used by forward dispatch)
+     *
+     * `controllerLookup` stores the full controller class because the runtime can't
+     * unambiguously reconstruct it from the module name — third-party admin modules
+     * have an `_Adminhtml_` infix in the class (e.g. `Maho_FeedManager_Adminhtml_…`),
+     * while `Mage_Adminhtml`'s own controllers don't. Storing the class directly
+     * makes the lookup authoritative and eliminates convention-based guessing.
      *
      * Admin and install routes are keyed by a sentinel rather than the config.xml frontName,
      * because the runtime admin frontName is configurable via `use_custom_admin_path`.
@@ -873,7 +879,7 @@ final class AttributeCompiler
 
             $action = strtolower((string) preg_replace('/Action$/', '', $route['action']));
             $reverseLookup[$frontName . '/' . $route['controllerName'] . '/' . $action] = $routeName;
-            $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['module'];
+            $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['class'];
         }
 
         self::$data['reverseLookup'] = $reverseLookup;
