@@ -914,7 +914,18 @@ final class AttributeCompiler
             }
 
             $action = strtolower((string) preg_replace('/Action$/', '', $route['action']));
-            $reverseLookup[$frontName . '/' . $route['controllerName'] . '/' . $action] = $routeName;
+            $reverseKey = $frontName . '/' . $route['controllerName'] . '/' . $action;
+            if (isset($reverseLookup[$reverseKey])) {
+                self::logf(
+                    $log,
+                    'warning',
+                    'Reverse lookup collision on "%s": route "%s" overwrites "%s" (getUrl() will resolve to the later route)',
+                    $reverseKey,
+                    $routeName,
+                    $reverseLookup[$reverseKey],
+                );
+            }
+            $reverseLookup[$reverseKey] = $routeName;
             $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['class'];
         }
 
