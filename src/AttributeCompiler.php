@@ -831,15 +831,51 @@ final class AttributeCompiler
      * and the `_maho_front_name` route default. Admin/install use sentinels because
      * their runtime frontName can differ from the compile-time one (use_custom_admin_path).
      *
-     * @param array{area: string, path: string} $route
+     * @param array{area: string, path: string, module: string} $route
      */
     private static function resolveFrontNameKey(array $route): string
     {
         return match ($route['area']) {
             'adminhtml' => self::ADMIN_SENTINEL,
             'install' => self::INSTALL_SENTINEL,
-            default => explode('/', ltrim($route['path'], '/'))[0],
+            default => self::resolveFrontendFrontName($route),
         };
+    }
+
+    /**
+     * Derive the frontName for a frontend route.
+     *
+     * The normal source of truth is the first segment of the URL path, which
+     * by Magento 1 convention is the module's frontName (e.g. `/catalog/...`
+     * → `catalog`). Routes that register the bare `/` path (typically a CMS
+     * home page) have no front-name segment to extract, so we fall back to
+     * the module's short name (e.g. `Mage_Cms` → `cms`, `Maho\News` → `news`)
+     * which matches the Magento 1 naming convention.
+     *
+     * Without this fallback, `_maho_front_name` ends up empty for `/` routes.
+     * At runtime the dispatcher then calls `$request->setRouteName('')`, and
+     * `getFullActionName()` returns `_<controller>_<action>` (e.g.
+     * `_index_index` for the CMS home page) instead of the expected
+     * `cms_index_index`. Every layout XML block, widget instance, and
+     * `<remove>` directive that targets the standard controller-action
+     * handle on the home page is silently ignored.
+     *
+     * @param array{area: string, path: string, module: string} $route
+     */
+    private static function resolveFrontendFrontName(array $route): string
+    {
+        $firstSegment = explode('/', ltrim($route['path'], '/'))[0];
+        if ($firstSegment !== '') {
+            return $firstSegment;
+        }
+
+        $module = $route['module'];
+        if ($module === '') {
+            return '';
+        }
+        $separator = str_contains($module, '\\') ? '\\' : '_';
+        $tail = (string) strrchr($module, $separator);
+        return strtolower($tail === '' ? $module : ltrim($tail, $separator));
     }
 
     /**
@@ -878,7 +914,18 @@ final class AttributeCompiler
             }
 
             $action = strtolower((string) preg_replace('/Action$/', '', $route['action']));
-            $reverseLookup[$frontName . '/' . $route['controllerName'] . '/' . $action] = $routeName;
+            $reverseKey = $frontName . '/' . $route['controllerName'] . '/' . $action;
+            if (isset($reverseLookup[$reverseKey])) {
+                self::logf(
+                    $log,
+                    'warning',
+                    'Reverse lookup collision on "%s": route "%s" overwrites "%s" (getUrl() will resolve to the later route)',
+                    $reverseKey,
+                    $routeName,
+                    $reverseLookup[$reverseKey],
+                );
+            }
+            $reverseLookup[$reverseKey] = $routeName;
             $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['class'];
         }
 
