@@ -884,6 +884,9 @@ final class AttributeCompiler
      * - `reverseLookup`: frontName/controller/action → routeName (used by URL generation)
      * - `controllerLookup`: frontName/controller → controller class FQCN (used by forward dispatch)
      *
+     * When an action exposes several routes (URL aliases), the first-declared wins the
+     * reverse entry, so getUrl() is deterministic regardless of attribute ordering.
+     *
      * `controllerLookup` stores the full controller class because the runtime can't
      * unambiguously reconstruct it from the module name — third-party admin modules
      * have an `_Adminhtml_` infix in the class (e.g. `Maho_FeedManager_Adminhtml_…`),
@@ -897,6 +900,7 @@ final class AttributeCompiler
     private static function buildReverseLookup(?\Closure $log): void
     {
         $reverseLookup = [];
+        $reverseTargets = [];
         $controllerLookup = [];
 
         foreach (self::$data['routes'] as $routeName => $route) {
@@ -915,18 +919,31 @@ final class AttributeCompiler
 
             $action = strtolower((string) preg_replace('/Action$/', '', $route['action']));
             $reverseKey = $frontName . '/' . $route['controllerName'] . '/' . $action;
+            $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['class'];
+
+            $target = $route['class'] . '::' . $action;
             if (isset($reverseLookup[$reverseKey])) {
-                self::logf(
-                    $log,
-                    'warning',
-                    'Reverse lookup collision on "%s": route "%s" overwrites "%s" (getUrl() will resolve to the later route)',
-                    $reverseKey,
-                    $routeName,
-                    $reverseLookup[$reverseKey],
-                );
+                // Same target means these are URL aliases for one action (e.g. a
+                // controller stacking several #[Route] paths). getUrl() only needs
+                // one canonical URL, so keep the first-declared and stay quiet.
+                // Differing targets are a genuine ambiguity worth flagging.
+                if ($reverseTargets[$reverseKey] !== $target) {
+                    self::logf(
+                        $log,
+                        'warning',
+                        'Reverse lookup collision on "%s": routes "%s" (%s) and "%s" (%s) resolve to different targets; getUrl() will use the first-declared "%s"',
+                        $reverseKey,
+                        $reverseLookup[$reverseKey],
+                        $reverseTargets[$reverseKey],
+                        $routeName,
+                        $target,
+                        $reverseLookup[$reverseKey],
+                    );
+                }
+                continue;
             }
             $reverseLookup[$reverseKey] = $routeName;
-            $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['class'];
+            $reverseTargets[$reverseKey] = $target;
         }
 
         self::$data['reverseLookup'] = $reverseLookup;
