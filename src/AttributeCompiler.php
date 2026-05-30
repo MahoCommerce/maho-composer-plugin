@@ -884,8 +884,8 @@ final class AttributeCompiler
      * - `reverseLookup`: frontName/controller/action → routeName (used by URL generation)
      * - `controllerLookup`: frontName/controller → controller class FQCN (used by forward dispatch)
      *
-     * When an action exposes several routes (URL aliases), the first-declared wins the
-     * reverse entry, so getUrl() is deterministic regardless of attribute ordering.
+     * When an action exposes several routes (URL aliases), the last-declared wins the
+     * reverse entry, so getUrl() resolves deterministically to it.
      *
      * `controllerLookup` stores the full controller class because the runtime can't
      * unambiguously reconstruct it from the module name — third-party admin modules
@@ -922,25 +922,22 @@ final class AttributeCompiler
             $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['class'];
 
             $target = $route['class'] . '::' . $action;
-            if (isset($reverseLookup[$reverseKey])) {
-                // Same target means these are URL aliases for one action (e.g. a
-                // controller stacking several #[Route] paths). getUrl() only needs
-                // one canonical URL, so keep the first-declared and stay quiet.
-                // Differing targets are a genuine ambiguity worth flagging.
-                if ($reverseTargets[$reverseKey] !== $target) {
-                    self::logf(
-                        $log,
-                        'warning',
-                        'Reverse lookup collision on "%s": routes "%s" (%s) and "%s" (%s) resolve to different targets; getUrl() will use the first-declared "%s"',
-                        $reverseKey,
-                        $reverseLookup[$reverseKey],
-                        $reverseTargets[$reverseKey],
-                        $routeName,
-                        $target,
-                        $reverseLookup[$reverseKey],
-                    );
-                }
-                continue;
+            // Several routes can share a reverse key when an action exposes URL
+            // aliases (e.g. a controller stacking #[Route] paths). The last-declared
+            // route is the canonical getUrl() target, so same-target aliases overwrite
+            // silently; only a cross-target overwrite is a genuine ambiguity worth a warning.
+            if (isset($reverseTargets[$reverseKey]) && $reverseTargets[$reverseKey] !== $target) {
+                self::logf(
+                    $log,
+                    'warning',
+                    'Reverse lookup collision on "%s": routes "%s" (%s) and "%s" (%s) resolve to different targets; getUrl() will use the last-declared "%s"',
+                    $reverseKey,
+                    $reverseLookup[$reverseKey],
+                    $reverseTargets[$reverseKey],
+                    $routeName,
+                    $target,
+                    $routeName,
+                );
             }
             $reverseLookup[$reverseKey] = $routeName;
             $reverseTargets[$reverseKey] = $target;
