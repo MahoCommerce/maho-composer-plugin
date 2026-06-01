@@ -6,7 +6,7 @@
     "require": {
         "composer-plugin-api": "^2.1",
         "composer-runtime-api": "^2",
-        "symfony/routing": "^7.4"
+        "symfony/routing": "^8.1"
     },
     "require-dev": {
         "phpstan/phpstan": "^2.0",
