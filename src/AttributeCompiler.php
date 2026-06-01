@@ -831,7 +831,7 @@ final class AttributeCompiler
      * and the `_maho_front_name` route default. Admin/install use sentinels because
      * their runtime frontName can differ from the compile-time one (use_custom_admin_path).
      *
-     * @param array{area: string, path: string, module: string} $route
+     * @param array{area: string, path: string, module: string, ...} $route
      */
     private static function resolveFrontNameKey(array $route): string
     {
@@ -860,7 +860,7 @@ final class AttributeCompiler
      * `<remove>` directive that targets the standard controller-action
      * handle on the home page is silently ignored.
      *
-     * @param array{area: string, path: string, module: string} $route
+     * @param array{area: string, path: string, module: string, ...} $route
      */
     private static function resolveFrontendFrontName(array $route): string
     {

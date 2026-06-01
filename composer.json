@@ -20,6 +20,11 @@
             "Maho\\ComposerPlugin\\": "src/"
         }
     },
+    "config": {
+        "platform": {
+            "php": "8.3.0"
+        }
+    },
     "extra": {
         "class": [
             "Maho\\ComposerPlugin\\AutoloadPlugin",
