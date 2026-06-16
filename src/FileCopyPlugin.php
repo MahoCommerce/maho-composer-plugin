@@ -105,6 +105,13 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
                 $this->copyDirectory("$packagePath/js", "$projectDir/public/js", $io);
             }
         }
+
+        // Publish API Platform bundle assets for the Swagger UI / ReDoc / GraphiQL
+        // pages (the equivalent of Symfony's assets:install, which Maho can't run).
+        $apiPlatformAssets = "$vendorDir/api-platform/core/src/Symfony/Bundle/Resources/public";
+        if (is_dir($apiPlatformAssets)) {
+            $this->copyDirectory($apiPlatformAssets, "$projectDir/public/bundles/apiplatform", $io);
+        }
     }
 
     private function copyDirectory(string $src, string $dst, IOInterface $io): void

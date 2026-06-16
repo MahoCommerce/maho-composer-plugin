@@ -61,6 +61,7 @@ Each plugin implements `PluginInterface` and `EventSubscriberInterface` from Com
 - Copies static assets from modules to project:
   - `public/`, `skin/`, `js/` folders from all `maho-module` and `magento-module` packages
   - Main Maho `public/` folder and `maho` CLI script
+  - API Platform bundle assets (Swagger UI / ReDoc / GraphiQL) into `public/bundles/apiplatform/`, the equivalent of Symfony's `assets:install`
 - Checks both actual vendor paths and modman symlink paths for module assets
 
 ### Package Resolution Order
