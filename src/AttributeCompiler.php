@@ -241,14 +241,23 @@ final class AttributeCompiler
 
         $classes = [];
         $directoryIter = new \RecursiveDirectoryIterator($dir, \RecursiveDirectoryIterator::SKIP_DOTS);
-        // Skip vendor/, node_modules/, and dotdirs (.git, .idea, etc.) — these never
-        // contain user-authored Maho classes, and recursing into vendor/ from the
-        // project root tries to autoload the plugin's own composer-plugin classes.
+        // The package's own top-level tests/ dir: skipped because test fixtures (controllers,
+        // observers) must never leak into compiled routes/observers/overrides. This bites in a
+        // dev checkout, where the maho-source package path is the whole repo tree (tests/ and
+        // all). Anchored to the package root — not a name match at any depth — so a directory
+        // deeper in the tree that happens to be named "tests" is left alone.
+        $rootTestsDir = rtrim($dir, '/') . '/tests';
+        // Skip vendor/, node_modules/, and dotdirs (.git, .idea, etc.) too — these never
+        // contain compilable Maho classes, and recursing into vendor/ from the project root
+        // tries to autoload the plugin's own composer-plugin classes.
         $filtered = new \RecursiveCallbackFilterIterator(
             $directoryIter,
-            static function (\SplFileInfo $current): bool {
+            static function (\SplFileInfo $current) use ($rootTestsDir): bool {
                 if (!$current->isDir()) {
                     return true;
+                }
+                if ($current->getPathname() === $rootTestsDir) {
+                    return false;
                 }
                 $name = $current->getFilename();
                 return $name !== 'vendor' && $name !== 'node_modules' && !str_starts_with($name, '.');
