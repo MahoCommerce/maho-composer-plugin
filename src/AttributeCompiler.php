@@ -935,20 +935,27 @@ final class AttributeCompiler
             if (!str_ends_with($className, 'Controller') || isset($baseClasses[$className])) {
                 continue;
             }
-            if (!class_exists($className)) {
-                continue;
-            }
-
-            $reflection = new ReflectionClass($className);
-            if ($reflection->isAbstract() || $reflection->isInterface() || $reflection->isTrait()) {
-                continue;
-            }
-
-            for ($parent = $reflection->getParentClass(); $parent !== false; $parent = $parent->getParentClass()) {
-                if (isset($baseClasses[$parent->getName()])) {
-                    $candidatesByBase[$parent->getName()][] = $className;
-                    break;
+            // Loading a subclass links its whole parent chain; a controller with a
+            // missing/renamed parent throws here. Isolate it so one broken controller
+            // can't abort the entire compile (matches the attribute paths' warn-and-skip).
+            try {
+                if (!class_exists($className)) {
+                    continue;
                 }
+
+                $reflection = new ReflectionClass($className);
+                if ($reflection->isAbstract() || $reflection->isInterface() || $reflection->isTrait()) {
+                    continue;
+                }
+
+                for ($parent = $reflection->getParentClass(); $parent !== false; $parent = $parent->getParentClass()) {
+                    if (isset($baseClasses[$parent->getName()])) {
+                        $candidatesByBase[$parent->getName()][] = $className;
+                        break;
+                    }
+                }
+            } catch (\Throwable $e) {
+                self::logf($log, 'warning', 'Skipping controller override candidate %s: %s', $className, $e->getMessage());
             }
         }
 
