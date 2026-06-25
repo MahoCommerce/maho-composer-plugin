@@ -46,6 +46,19 @@ final class AttributeCompiler
     private static array $classAliasMap = [];
 
     /**
+     * Map of route-owning controller class → the most-derived subclass that overrides it.
+     *
+     * Populated by collectControllerOverrides(): a controller subclass that extends a
+     * route-owning controller but declares no `#[Route]` of its own is an implicit override.
+     * The compiler points the relevant `controllerLookup` entry at the override instead of
+     * the base, so overriding a core controller needs no XML and no extra attribute — just
+     * the subclass. Only entries where an override actually exists are stored.
+     *
+     * @var array<class-string, class-string>
+     */
+    private static array $controllerOverrides = [];
+
+    /**
      * Sentinel key for admin area in reverseLookup / controllerLookup.
      * Admin frontName is runtime-configurable (use_custom_admin_path), so routes are
      * keyed by this sentinel in compiled lookup maps and translated at dispatch time.
@@ -102,6 +115,7 @@ final class AttributeCompiler
             'reverseLookup' => [],
             'controllerLookup' => [],
         ];
+        self::$controllerOverrides = [];
 
         $replaces = [];
 
@@ -154,6 +168,11 @@ final class AttributeCompiler
                     self::processRouteAttributes($method, $className, $log);
                 }
             }
+
+            // Detect implicit controller overrides while the classmap autoloader is still
+            // registered — this reflects subclasses that the main loop skipped (they declare
+            // no Maho\Config\* attribute, so the strpos pre-filter above excludes them).
+            self::collectControllerOverrides($scannedClasses, $log);
         } finally {
             spl_autoload_unregister($classMapAutoloader);
         }
@@ -173,6 +192,7 @@ final class AttributeCompiler
         self::$activeModulesBuilt = false;
         self::$scannedClassesCache = null;
         self::$classAliasMap = [];
+        self::$controllerOverrides = [];
     }
 
     /**
@@ -879,6 +899,124 @@ final class AttributeCompiler
     }
 
     /**
+     * Detect implicit controller overrides and record the winner per route-owning base.
+     *
+     * A controller override is a subclass of a route-owning controller (one that declares
+     * `#[Route]`) which itself declares no new route — it only reimplements inherited actions.
+     * Such a subclass is registered as an override of its nearest route-owning ancestor, so
+     * the compiled `controllerLookup` dispatches to it instead of the base. This replaces the
+     * legacy `<routers><args><modules>` XML chain for the attribute-routed case: a module
+     * overrides a core controller simply by subclassing it.
+     *
+     * Cross-module precedence is resolved structurally. When several subclasses target the
+     * same base they normally form a single inheritance chain (B extends A extends Core), and
+     * the most-derived class wins unambiguously. The only genuine conflict is two *sibling*
+     * subclasses extending the base independently; that is reported as an error and resolved
+     * deterministically by module load order (later-scanned wins — local/community over core).
+     *
+     * @param array<class-string, string> $scannedClasses class name → file path (in scan order)
+     */
+    private static function collectControllerOverrides(array $scannedClasses, ?\Closure $log): void
+    {
+        // Route-owning controllers — the bases an override can target.
+        $baseClasses = [];
+        foreach (self::$data['routes'] as $route) {
+            $baseClasses[$route['class']] = true;
+        }
+        if ($baseClasses === []) {
+            return;
+        }
+
+        // Group override candidates by the nearest route-owning ancestor they extend.
+        // Iterate keys in scan order — module load order drives conflict tiebreaks below.
+        $candidatesByBase = [];
+        foreach (array_keys($scannedClasses) as $className) {
+            // Controllers only; a route-owner is its own controller, never an override of one.
+            if (!str_ends_with($className, 'Controller') || isset($baseClasses[$className])) {
+                continue;
+            }
+            if (!class_exists($className)) {
+                continue;
+            }
+
+            $reflection = new ReflectionClass($className);
+            if ($reflection->isAbstract() || $reflection->isInterface() || $reflection->isTrait()) {
+                continue;
+            }
+
+            for ($parent = $reflection->getParentClass(); $parent !== false; $parent = $parent->getParentClass()) {
+                if (isset($baseClasses[$parent->getName()])) {
+                    $candidatesByBase[$parent->getName()][] = $className;
+                    break;
+                }
+            }
+        }
+
+        foreach ($candidatesByBase as $base => $candidates) {
+            $winner = self::resolveMostDerived($base, $candidates, $log);
+            if ($winner !== $base) {
+                self::$controllerOverrides[$base] = $winner;
+            }
+        }
+    }
+
+    /**
+     * Pick the most-derived controller among a base and its override candidates.
+     *
+     * The winner is the unique class no other candidate extends (the bottom of the chain).
+     * If two or more candidates are mutually incomparable (sibling overrides), there is no
+     * unique winner: emit an error and fall back to the last candidate in scan order, which
+     * is module load order — local/community modules override core.
+     *
+     * @param class-string       $base       the route-owning base controller
+     * @param list<class-string> $candidates subclasses overriding $base, in scan order
+     * @return class-string
+     */
+    private static function resolveMostDerived(string $base, array $candidates, ?\Closure $log): string
+    {
+        $set = array_merge([$base], $candidates);
+
+        // Maximal = nothing in the set extends it. The base always has a descendant here
+        // (every candidate subclasses it), so the winner is always an actual override.
+        $maximal = [];
+        foreach ($set as $candidate) {
+            $isMaximal = true;
+            foreach ($set as $other) {
+                if ($other !== $candidate && is_subclass_of($other, $candidate)) {
+                    $isMaximal = false;
+                    break;
+                }
+            }
+            if ($isMaximal) {
+                $maximal[] = $candidate;
+            }
+        }
+
+        if (count($maximal) === 1) {
+            return $maximal[0];
+        }
+
+        // Sibling conflict: deterministic fallback to the last maximal candidate in scan order.
+        $winner = $maximal[0];
+        foreach ($candidates as $candidate) {
+            if (in_array($candidate, $maximal, true)) {
+                $winner = $candidate;
+            }
+        }
+
+        self::logf(
+            $log,
+            'error',
+            'Controller override conflict on %s: %s independently override it with no shared inheritance chain. Using "%s" (last in module load order); resolve by having one override extend the other.',
+            $base,
+            implode(', ', $maximal),
+            $winner,
+        );
+
+        return $winner;
+    }
+
+    /**
      * Build reverse-lookup maps keyed by frontName.
      *
      * - `reverseLookup`: frontName/controller/action → routeName (used by URL generation)
@@ -919,7 +1057,11 @@ final class AttributeCompiler
 
             $action = strtolower((string) preg_replace('/Action$/', '', $route['action']));
             $reverseKey = $frontName . '/' . $route['controllerName'] . '/' . $action;
-            $controllerLookup[$frontName . '/' . $route['controllerName']] = $route['class'];
+            // Point the lookup at the most-derived override when one exists, falling back
+            // to the route-owning base class. The reverse lookup below keeps targeting the
+            // base — URL generation is keyed on the route, not on which subclass handles it.
+            $controllerLookup[$frontName . '/' . $route['controllerName']] =
+                self::$controllerOverrides[$route['class']] ?? $route['class'];
 
             $target = $route['class'] . '::' . $action;
             // Several routes can share a reverse key when an action exposes URL
