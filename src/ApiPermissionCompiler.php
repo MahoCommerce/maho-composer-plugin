@@ -106,10 +106,6 @@ final class ApiPermissionCompiler
         $publicRead      = [];
         /** @var array<string, string> */
         $customerScoped  = [];
-        /** @var array<string, string> */
-        $segmentMap      = [];
-        /** @var array<string, string> */
-        $graphQlFieldMap = [];
 
         $scannedClasses = AttributeCompiler::scanClasses($log);
 
@@ -166,15 +162,13 @@ final class ApiPermissionCompiler
                         continue; // attribute opted out (e.g. no derivable id)
                     }
 
-                    $id            = $data['id'];
-                    $entry         = $data['entry'];
-                    $segments      = $data['segments'];
-                    $graphQlFields = $data['graphQlFields'];
+                    $id    = $data['id'];
+                    $entry = $data['entry'];
 
                     // Multiple ApiResource attributes on the same class with the same id
                     // are a legitimate pattern (different uriTemplates / operation sets that
                     // share one permission identity). Merge silently — the second attribute's
-                    // entry wins, but its segments/graphQlFields are unioned below.
+                    // entry wins.
                     // Cross-class id collisions are almost always a bug (two DTOs claiming the
                     // same permission identity). Skip the second one entirely so the result
                     // is deterministic regardless of ClassMapGenerator iteration order.
@@ -199,34 +193,6 @@ final class ApiPermissionCompiler
                     if ($resource->mahoCustomerScoped) {
                         $customerScoped[$id] = $resource->getDescription() ?? '';
                     }
-
-                    foreach ($segments as $segment) {
-                        if (isset($segmentMap[$segment]) && $segmentMap[$segment] !== $id) {
-                            self::logf(
-                                $log,
-                                'warning',
-                                'REST segment "%s" mapped to both "%s" and "%s"',
-                                $segment,
-                                $segmentMap[$segment],
-                                $id,
-                            );
-                        }
-                        $segmentMap[$segment] = $id;
-                    }
-
-                    foreach ($graphQlFields as $field) {
-                        if (isset($graphQlFieldMap[$field]) && $graphQlFieldMap[$field] !== $id) {
-                            self::logf(
-                                $log,
-                                'warning',
-                                'GraphQL field "%s" mapped to both "%s" and "%s"',
-                                $field,
-                                $graphQlFieldMap[$field],
-                                $id,
-                            );
-                        }
-                        $graphQlFieldMap[$field] = $id;
-                    }
                 }
             }
         } finally {
@@ -234,8 +200,6 @@ final class ApiPermissionCompiler
         }
 
         ksort($resources);
-        ksort($segmentMap);
-        ksort($graphQlFieldMap);
         ksort($customerScoped);
 
         // Strip the diagnostics-only `_class` key that's used to distinguish
@@ -249,8 +213,6 @@ final class ApiPermissionCompiler
             'resources' => $resources,
             'publicRead' => array_keys($publicRead),
             'customerScoped' => $customerScoped,
-            'segmentMap' => $segmentMap,
-            'graphQlFieldMap' => $graphQlFieldMap,
         ];
 
         $content = '<?php return ' . var_export($data, true) . ";\n";
@@ -271,8 +233,6 @@ final class ApiPermissionCompiler
      * @return array{
      *     id: string,
      *     entry: array{label: string, section: string, operations: array<string, string>},
-     *     segments: list<string>,
-     *     graphQlFields: list<string>,
      * }|null
      */
     private static function derivePermissionData(ApiResource $resource, ReflectionClass $reflection, ?\Closure $log): ?array
@@ -300,21 +260,6 @@ final class ApiPermissionCompiler
         // ---- operations (derive from parent operations array) ----
         $operations = $resource->mahoOperations ?? self::deriveOperations($resource);
 
-        // ---- REST segments — auto = just the resource id; mahoRestSegments
-        //      is treated as an augment (additional segments) so callers don't
-        //      have to repeat the primary id. Pass `[]` to suppress the default.
-        $segments = self::deriveRestSegments($id);
-        if ($resource->mahoRestSegments !== null) {
-            $segments = array_values(array_unique([...$segments, ...$resource->mahoRestSegments]));
-        }
-
-        // ---- GraphQL fields — auto from graphQlOperations[].name plus optional
-        //      mahoGraphQlFields for handler-defined fields the compiler can't see.
-        $graphQlFields = self::deriveGraphQlFields($resource);
-        if ($resource->mahoGraphQlFields !== null) {
-            $graphQlFields = array_values(array_unique([...$graphQlFields, ...$resource->mahoGraphQlFields]));
-        }
-
         $entry = [
             'label' => $label,
             'section' => $section,
@@ -324,8 +269,6 @@ final class ApiPermissionCompiler
         return [
             'id' => $id,
             'entry' => $entry,
-            'segments' => $segments,
-            'graphQlFields' => $graphQlFields,
         ];
     }
 
@@ -464,51 +407,4 @@ final class ApiPermissionCompiler
         return $sawRead;
     }
 
-    /**
-     * Default REST segment is just the resource id itself.
-     *
-     * Deriving from `operations[].uriTemplate` first-segments is tempting but
-     * wrong: nested URIs like `/orders/{id}/invoices` (declared on Invoice) would
-     * register 'orders' as an Invoice segment, clobbering the actual mapping
-     * for Order. Resources that legitimately have alternate top-level segments
-     * (e.g. Cart serving both `/carts/*` and `/guest-carts/*`) must declare
-     * `mahoRestSegments` explicitly.
-     *
-     * @return list<string>
-     */
-    private static function deriveRestSegments(string $id): array
-    {
-        return [$id];
-    }
-
-    /**
-     * Pull externally-exposed `name:` values from `graphQlOperations` to build
-     * the field map.
-     *
-     * Skips snake_case names (`item_query`, `collection_query`, `add_cart_item`):
-     * those are API Platform's internal operation identifiers used for access
-     * control routing, not the schema field name. Resources whose schema-exposed
-     * field names diverge (and aren't camelCase `name:` values on the DTO)
-     * should declare `mahoGraphQlFields` to surface them. Same applies to
-     * handler-defined fields declared in `*MutationHandler` / `*QueryHandler`
-     * classes that the compiler can't see from the DTO alone.
-     *
-     * @return list<string>
-     */
-    private static function deriveGraphQlFields(ApiResource $resource): array
-    {
-        $fields = [];
-        $ops = $resource->getGraphQlOperations();
-        if ($ops === null) {
-            return [];
-        }
-        foreach ($ops as $op) {
-            $name = $op->getName();
-            if ($name === null || $name === '' || str_contains($name, '_')) {
-                continue;
-            }
-            $fields[$name] = true;
-        }
-        return array_keys($fields);
-    }
 }
