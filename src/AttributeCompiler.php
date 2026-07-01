@@ -768,7 +768,7 @@ final class AttributeCompiler
                 self::logf($log, 'warning', 'Failed to parse %s, skipping', $xmlFile);
                 continue;
             }
-            foreach ($xml->modules->children() ?? [] as $moduleName => $moduleConfig) {
+            foreach ($xml->modules?->children() ?? [] as $moduleName => $moduleConfig) {
                 $activeStr = strtolower(trim((string) ($moduleConfig->active ?? 'true')));
                 $active = ($activeStr !== 'false' && $activeStr !== '0');
                 $depends = [];
@@ -845,7 +845,7 @@ final class AttributeCompiler
             }
 
             foreach (['models', 'helpers', 'blocks'] as $groupType) {
-                foreach ($xml->global->{$groupType}->children() ?? [] as $groupName => $groupConfig) {
+                foreach ($xml->global?->{$groupType}?->children() ?? [] as $groupName => $groupConfig) {
                     $classPrefix = (string) $groupConfig->class;
                     if ($classPrefix !== '') {
                         self::$classAliasMap[$classPrefix] = strtolower($groupName);
