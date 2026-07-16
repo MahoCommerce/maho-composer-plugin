@@ -6,6 +6,7 @@ use ApiPlatform\Metadata\Delete;
 use ApiPlatform\Metadata\Get;
 use ApiPlatform\Metadata\GetCollection;
 use ApiPlatform\Metadata\HttpOperation;
+use ApiPlatform\Metadata\Operation\DashPathSegmentNameGenerator;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
@@ -273,27 +274,25 @@ final class ApiPermissionCompiler
     }
 
     /**
-     * 'Cart' → 'carts', 'CmsPage' → 'cms-pages', 'ProductMedia' → 'product-medias'.
-     * Naive plural-by-trailing-s; specific irregulars should set mahoId explicitly.
+     * 'Cart' → 'carts', 'CmsPage' → 'cms-pages', 'Category' → 'categories'.
+     *
+     * Uses API Platform's inflector — the same one that drives REST path-segment
+     * naming — so irregular plurals resolve correctly ('Person' → 'people',
+     * 'Series' → 'series') instead of the old naive trailing-'s' rule.
+     *
+     * Public and static on purpose: this is the single source of truth for the
+     * permission id baked into maho_api_permissions.php, and Maho's CLI tooling
+     * (dev:api:resource:create / :list) calls it directly rather than
+     * re-implementing the rule. Authors may still override via an explicit
+     * mahoId (e.g. 'Stock' → 'inventory').
      */
-    private static function deriveIdFromShortName(string $shortName): string
+    public static function deriveIdFromShortName(string $shortName): string
     {
         if ($shortName === '') {
             return '';
         }
-        // CamelCase → kebab-case
-        $kebab = strtolower((string) preg_replace('/(?<!^)([A-Z])/', '-$1', $shortName));
-        // Plural: ends in 'y' → 'ies'; in 's'/'x'/'z'/'ch'/'sh' → 'es'; else → 's'
-        if (str_ends_with($kebab, 'y') && preg_match('/[aeiou]y$/', $kebab) === 0) {
-            return substr($kebab, 0, -1) . 'ies';
-        }
-        if (preg_match('/(s|x|z|ch|sh)$/', $kebab) === 1) {
-            return $kebab . 'es';
-        }
-        if (str_ends_with($kebab, 's')) {
-            return $kebab; // already plural
-        }
-        return $kebab . 's';
+
+        return (new DashPathSegmentNameGenerator())->getSegmentName($shortName, true);
     }
 
     /**
