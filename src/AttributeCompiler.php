@@ -4,6 +4,7 @@ namespace Maho\ComposerPlugin;
 
 use Composer\IO\IOInterface;
 use Maho\Config\CronJob;
+use Maho\Config\MessageHandler;
 use Maho\Config\Observer;
 use Maho\Config\Route;
 use ReflectionClass;
@@ -74,6 +75,7 @@ final class AttributeCompiler
      * @var array{
      *     observers: array<string, array<string, list<array{name: string, module: string, class: string, alias: string, method: string, type: string}>>>,
      *     crontab: array<string, array{module: string, alias: string, method: string, schedule: ?string, config_path: ?string}>,
+     *     messageHandlers: array<string, list<array{module: string, class: string, alias: string, method: string, priority: int}>>,
      *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string, pathVariables: list<string>}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>,
      *     reverseLookup: array<string, string>,
@@ -111,6 +113,7 @@ final class AttributeCompiler
         self::$data = [
             'observers' => [],
             'crontab' => [],
+            'messageHandlers' => [],
             'routes' => [],
             'reverseLookup' => [],
             'controllerLookup' => [],
@@ -143,6 +146,7 @@ final class AttributeCompiler
 
                 if (strpos($contents, 'Maho\Config\Observer') === false
                     && strpos($contents, 'Maho\Config\CronJob') === false
+                    && strpos($contents, 'Maho\Config\MessageHandler') === false
                     && strpos($contents, 'Maho\Config\Route') === false
                 ) {
                     continue;
@@ -165,6 +169,7 @@ final class AttributeCompiler
 
                     self::processObserverAttributes($method, $className, $replaces, $log);
                     self::processCronJobAttributes($method, $className, $log);
+                    self::processMessageHandlerAttributes($method, $className, $log);
                     self::processRouteAttributes($method, $className, $log);
                 }
             }
@@ -178,6 +183,7 @@ final class AttributeCompiler
         }
 
         self::applyReplaces($replaces);
+        self::sortMessageHandlers();
         self::buildReverseLookup($log);
         self::writeOutput($outputDir, $log);
         self::dumpRoutingFiles($outputDir, $log);
@@ -531,6 +537,91 @@ final class AttributeCompiler
                 'config_path' => $cronJob->configPath,
             ];
         }
+    }
+
+    private static function processMessageHandlerAttributes(
+        ReflectionMethod $method,
+        string $className,
+        ?\Closure $log,
+    ): void {
+        // Older maho cores ship without the attribute class; the feature is simply absent there.
+        if (!class_exists(MessageHandler::class)) {
+            return;
+        }
+
+        $attributes = $method->getAttributes(MessageHandler::class);
+        foreach ($attributes as $attribute) {
+            try {
+                $handler = $attribute->newInstance();
+            } catch (\Throwable $e) {
+                self::logf(
+                    $log,
+                    'warning',
+                    'Skipping MessageHandler attribute on %s::%s: %s',
+                    $className,
+                    $method->getName(),
+                    $e->getMessage(),
+                );
+                continue;
+            }
+
+            $messageClass = $handler->message ?? self::inferMessageClass($method);
+            if ($messageClass === null) {
+                self::logf(
+                    $log,
+                    'warning',
+                    'MessageHandler on %s::%s has no message class: pass one to the attribute or type the first parameter with a single class type, skipping',
+                    $className,
+                    $method->getName(),
+                );
+                continue;
+            }
+
+            self::$data['messageHandlers'][$messageClass][] = [
+                'module' => self::extractModuleName($className),
+                'class' => $className,
+                'alias' => self::resolveClassAlias($className) ?? $className,
+                'method' => $method->getName(),
+                'priority' => $handler->priority,
+            ];
+        }
+    }
+
+    /**
+     * Infer the handled message class from the handler method's first parameter,
+     * mirroring Symfony Messenger's AsMessageHandler convention.
+     */
+    private static function inferMessageClass(ReflectionMethod $method): ?string
+    {
+        $parameters = $method->getParameters();
+        if ($parameters === []) {
+            return null;
+        }
+
+        $type = $parameters[0]->getType();
+        if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+            return null;
+        }
+
+        return $type->getName();
+    }
+
+    /**
+     * Deterministic output order: message classes alphabetical, handlers per class
+     * by priority descending. HandlersLocator calls handlers in array order and
+     * does no sorting of its own, so the compiled order is the call order.
+     */
+    private static function sortMessageHandlers(): void
+    {
+        if (self::$data['messageHandlers'] === []) {
+            return;
+        }
+
+        ksort(self::$data['messageHandlers']);
+        foreach (self::$data['messageHandlers'] as &$handlers) {
+            usort($handlers, static fn(array $a, array $b): int => $b['priority'] <=> $a['priority']);
+        }
+        unset($handlers);
     }
 
     private static function processRouteAttributes(

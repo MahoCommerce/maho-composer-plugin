@@ -31,6 +31,16 @@ class CronJob
     }
 }
 
+#[\Attribute(\Attribute::TARGET_METHOD)]
+class MessageHandler
+{
+    public function __construct(
+        public ?string $message = null,
+        public int $priority = 0,
+    ) {
+    }
+}
+
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
 class Route
 {
