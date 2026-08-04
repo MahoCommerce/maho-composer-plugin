@@ -39,6 +39,12 @@ final class AttributeCompiler
     private static ?array $scannedClassesCache = null;
 
     /**
+     * Memoised class_exists(MessageHandler::class), since PHP doesn't cache negative
+     * autoload lookups. Must be computed while the temporary classmap autoloader is registered.
+     */
+    private static ?bool $messageHandlerAvailable = null;
+
+    /**
      * Map of class prefix → model group alias built from config.xml files.
      * e.g. 'Mage_Newsletter_Model' => 'newsletter'
      *
@@ -197,6 +203,7 @@ final class AttributeCompiler
         self::$activeModules = null;
         self::$activeModulesBuilt = false;
         self::$scannedClassesCache = null;
+        self::$messageHandlerAvailable = null;
         self::$classAliasMap = [];
         self::$controllerOverrides = [];
     }
@@ -545,7 +552,8 @@ final class AttributeCompiler
         ?\Closure $log,
     ): void {
         // Older maho cores ship without the attribute class; the feature is simply absent there.
-        if (!class_exists(MessageHandler::class)) {
+        self::$messageHandlerAvailable ??= class_exists(MessageHandler::class);
+        if (!self::$messageHandlerAvailable) {
             return;
         }
 
@@ -577,6 +585,9 @@ final class AttributeCompiler
                 continue;
             }
 
+            // The runtime registry is keyed by $message::class, which never has a leading backslash.
+            $messageClass = ltrim($messageClass, '\\');
+
             self::$data['messageHandlers'][$messageClass][] = [
                 'module' => self::extractModuleName($className),
                 'class' => $className,
@@ -603,7 +614,17 @@ final class AttributeCompiler
             return null;
         }
 
-        return $type->getName();
+        // self/parent are relative types, resolve them to the actual class name.
+        $name = $type->getName();
+        if (strtolower($name) === 'self') {
+            return $method->getDeclaringClass()->getName();
+        }
+        if (strtolower($name) === 'parent') {
+            $parent = $method->getDeclaringClass()->getParentClass();
+            return $parent === false ? null : $parent->getName();
+        }
+
+        return $name;
     }
 
     /**
