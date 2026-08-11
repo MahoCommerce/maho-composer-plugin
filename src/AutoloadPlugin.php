@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Maho\ComposerPlugin;
 
@@ -41,7 +43,6 @@ use Composer\Util\Filesystem;
  *     "vendor/mahocommerce/maho/app/code/core",
  *     "vendor/mahocommerce/maho/lib"
  * ]
- *
  */
 final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
 {
@@ -54,13 +55,9 @@ final class AutoloadPlugin implements PluginInterface, EventSubscriberInterface
         $this->filesystem = new Filesystem();
     }
 
-    public function deactivate(Composer $composer, IOInterface $io)
-    {
-    }
+    public function deactivate(Composer $composer, IOInterface $io) {}
 
-    public function uninstall(Composer $composer, IOInterface $io)
-    {
-    }
+    public function uninstall(Composer $composer, IOInterface $io) {}
 
     public static function getSubscribedEvents()
     {

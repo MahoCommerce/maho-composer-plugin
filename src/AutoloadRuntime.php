@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Maho\ComposerPlugin;
 
@@ -180,7 +182,7 @@ final class AutoloadRuntime
                 $prefix = str_replace('/', '_', substr($file, strlen($path) + 1));
                 if (is_file($file) && str_ends_with($file, '.php')) {
                     $prefix = str_replace('.php', '', $prefix);
-                } else if (is_dir($file)) {
+                } elseif (is_dir($file)) {
                     $prefix .= '_';
                 } else {
                     continue;
