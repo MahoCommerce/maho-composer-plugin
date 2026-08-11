@@ -4,6 +4,7 @@
     "type": "composer-plugin",
     "license": "MIT",
     "require": {
+        "php": ">=8.3",
         "composer-plugin-api": "^2.1",
         "composer-runtime-api": "^2",
         "symfony/routing": "^7.4"
