@@ -14,7 +14,9 @@
         "phpstan/phpstan-strict-rules": "^2.0",
         "phpstan/phpstan-deprecation-rules": "^2.0",
         "composer/composer": "^2.9.3",
-        "api-platform/core": "^4.0"
+        "api-platform/core": "^4.0",
+        "friendsofphp/php-cs-fixer": "*",
+        "rector/rector": "*"
     },
     "autoload": {
         "psr-4": {
