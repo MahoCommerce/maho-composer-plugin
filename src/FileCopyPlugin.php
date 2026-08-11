@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Maho\ComposerPlugin;
 
@@ -82,9 +84,7 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
         // Get all maho modules
         $localRepo = $composer->getRepositoryManager()->getLocalRepository();
         $packages = $localRepo->getPackages();
-        $mahoModules = array_filter($packages, function($package) {
-            return in_array($package->getType(), ['magento-module', 'maho-module'], true);
-        });
+        $mahoModules = array_filter($packages, fn($package) => in_array($package->getType(), ['magento-module', 'maho-module'], true));
 
         // Copy public folders from module packages
         foreach ($mahoModules as $package) {

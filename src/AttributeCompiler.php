@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Maho\ComposerPlugin;
 
@@ -150,10 +152,10 @@ final class AttributeCompiler
                     continue;
                 }
 
-                if (strpos($contents, 'Maho\Config\Observer') === false
-                    && strpos($contents, 'Maho\Config\CronJob') === false
-                    && strpos($contents, 'Maho\Config\MessageHandler') === false
-                    && strpos($contents, 'Maho\Config\Route') === false
+                if (!str_contains($contents, 'Maho\Config\Observer')
+                    && !str_contains($contents, 'Maho\Config\CronJob')
+                    && !str_contains($contents, 'Maho\Config\MessageHandler')
+                    && !str_contains($contents, 'Maho\Config\Route')
                 ) {
                     continue;
                 }
@@ -446,7 +448,7 @@ final class AttributeCompiler
 
             $alias = self::resolveClassAlias($className) ?? $className;
             $name = $observer->id ?? $alias . '::' . $method->getName();
-            $areas = array_map('trim', explode(',', $observer->area));
+            $areas = array_map(trim(...), explode(',', $observer->area));
             $event = strtolower($observer->event);
 
             $entry = [
@@ -729,7 +731,7 @@ final class AttributeCompiler
             $name = (string) preg_replace('/Controller$/', '', $className);
             $parts = array_filter(
                 explode('\\', $name),
-                static fn (string $p): bool => strtolower($p) !== 'controller',
+                static fn(string $p): bool => strtolower($p) !== 'controller',
             );
             $classKey = strtolower(implode('.', $parts));
         } else {
@@ -797,7 +799,7 @@ final class AttributeCompiler
                 $observers = array_values(
                     array_filter(
                         $observers,
-                        static fn (array $observer): bool => !self::observerMatchesTarget($observer, $target),
+                        static fn(array $observer): bool => !self::observerMatchesTarget($observer, $target),
                     ),
                 );
                 self::$data['observers'][$area][$event] = $observers;
@@ -1227,7 +1229,7 @@ final class AttributeCompiler
             if (str_starts_with($className, $prefix . '_')) {
                 $suffix = substr($className, strlen($prefix) + 1);
                 $parts = explode('_', $suffix);
-                $alias = implode('_', array_map('lcfirst', $parts));
+                $alias = implode('_', array_map(lcfirst(...), $parts));
                 return $group . '/' . $alias;
             }
         }

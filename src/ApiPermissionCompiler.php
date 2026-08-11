@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Maho\ComposerPlugin;
 
@@ -128,7 +130,7 @@ final class ApiPermissionCompiler
 
                 // Cheap pre-filter: a Maho ApiResource attribute means this
                 // file references either the FQCN or the short `use Maho\Config\ApiResource`.
-                if (strpos($contents, 'Maho\Config\ApiResource') === false) {
+                if (!str_contains($contents, 'Maho\Config\ApiResource')) {
                     continue;
                 }
 
@@ -302,7 +304,7 @@ final class ApiPermissionCompiler
      */
     private static function deriveLabelFromId(string $id): string
     {
-        return implode(' ', array_map('ucfirst', explode('-', $id)));
+        return implode(' ', array_map(ucfirst(...), explode('-', $id)));
     }
 
     /**

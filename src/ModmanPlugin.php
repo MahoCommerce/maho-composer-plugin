@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace Maho\ComposerPlugin;
 
@@ -30,13 +32,9 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
         $this->filesystem = new Filesystem();
     }
 
-    public function deactivate(Composer $composer, IOInterface $io)
-    {
-    }
+    public function deactivate(Composer $composer, IOInterface $io) {}
 
-    public function uninstall(Composer $composer, IOInterface $io)
-    {
-    }
+    public function uninstall(Composer $composer, IOInterface $io) {}
 
     public static function getSubscribedEvents()
     {
@@ -131,7 +129,7 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
         }
 
         // If all files are straight mappings (i.e. created with generate-modman), then there's nothing to do
-        $unique = array_filter($symlinks, fn ($link) => $link[0] !== $link[1]);
+        $unique = array_filter($symlinks, fn($link) => $link[0] !== $link[1]);
         if (count($unique) === 0) {
             return;
         }
@@ -143,7 +141,7 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
         ));
 
         // Sort symlinks by target path ASC with shortest paths first
-        usort($symlinks, fn ($a, $b) => $a[1] <=> $b[1]);
+        usort($symlinks, fn($a, $b) => $a[1] <=> $b[1]);
 
         $created = [];
         foreach ($symlinks as [$source, $target]) {
@@ -152,7 +150,7 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
             $target = "$symlinkDir/$target";
 
             // Ensure target hasn't already been created or is in a child directory of another symlink
-            $conflicts = array_filter($created, fn ($link) => str_starts_with($target, $link));
+            $conflicts = array_filter($created, fn($link) => str_starts_with($target, $link));
             if (count($conflicts) > 0) {
                 $this->io->writeError(sprintf(
                     '  - <error>Could not symlink %s/%s -> %s because it conflicts with another target.</error>',
@@ -212,7 +210,7 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
             }
 
             // Normalize paths and strip any leading or trailing slashes
-            $parts = array_map(fn ($part) => trim($this->filesystem->normalizePath($part), '/'), $parts);
+            $parts = array_map(fn($part) => trim($this->filesystem->normalizePath($part), '/'), $parts);
 
             // If we have an import command, recurse while noting that sourcePath and targetPath may be different
             if ($command === '@import') {
