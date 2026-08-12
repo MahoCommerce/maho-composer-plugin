@@ -691,12 +691,16 @@ final class AttributeCompiler
             //   can declare routes like #[Route('/foo', area: 'adminhtml')] without
             //   needing to include the admin prefix themselves.
             $path = $route->path;
+            $pathHasFrontNameSegment = false;
             if ($area === 'adminhtml') {
                 if (preg_match('#^/admin(/|$)#', $path) === 1) {
                     $path = (string) preg_replace('#^/admin(/|$)#', '/{_adminFrontName}$1', $path);
+                    $pathHasFrontNameSegment = true;
                 } else {
                     $path = '/{_adminFrontName}' . (str_starts_with($path, '/') ? '' : '/') . $path;
                 }
+            } elseif ($area === 'install') {
+                $pathHasFrontNameSegment = preg_match('#^/install(/|$)#', $path) === 1;
             }
 
             preg_match_all('/\{(\w+)\}/', $path, $pathVarMatches);
@@ -710,7 +714,7 @@ final class AttributeCompiler
                 'requirements' => $route->requirements,
                 'area' => $area,
                 'module' => self::extractModuleName($className),
-                'controllerName' => self::resolveControllerName($className, $path, $area),
+                'controllerName' => self::resolveControllerName($className, $path, $pathHasFrontNameSegment),
                 'pathVariables' => $pathVarMatches[1],
             ];
         }
@@ -1239,14 +1243,17 @@ final class AttributeCompiler
     /**
      * URL-facing controller name for a route.
      *
-     * Admin and install paths carry it in segment 1, which is authoritative: the class name is
-     * ambiguous there (`Vendor_Module_Adminhtml_Foo` is `foo` in the adminhtml `<modules>`
-     * chain but `adminhtml_foo` under its own admin frontName). Frontend paths often omit the
-     * segment (`/wishlist` → `index`), so they keep deriving it from the class.
+     * Admin and install paths that declare the front name themselves carry it in segment 1, which
+     * is authoritative there: the class name is ambiguous (`Vendor_Module_Adminhtml_Foo` is `foo`
+     * in the adminhtml `<modules>` chain but `adminhtml_foo` under its own admin frontName).
+     * Every other path derives it from the class.
      */
-    private static function resolveControllerName(string $className, string $path, string $area): string
-    {
-        if ($area === 'adminhtml' || $area === 'install') {
+    private static function resolveControllerName(
+        string $className,
+        string $path,
+        bool $pathHasFrontNameSegment,
+    ): string {
+        if ($pathHasFrontNameSegment) {
             $segment = explode('/', trim($path, '/'))[1] ?? '';
             if (preg_match('/^\w+$/', $segment) === 1) {
                 return strtolower($segment);
@@ -1291,7 +1298,7 @@ final class AttributeCompiler
                 $controllerParts = array_slice($parts, 2);
             }
             // Skip leading 'Adminhtml'/'Install' organizational segments
-            if (isset($controllerParts[0])
+            if (count($controllerParts) > 1
                 && in_array(strtolower($controllerParts[0]), ['adminhtml', 'install'], true)
             ) {
                 array_shift($controllerParts);
