@@ -710,7 +710,7 @@ final class AttributeCompiler
                 'requirements' => $route->requirements,
                 'area' => $area,
                 'module' => self::extractModuleName($className),
-                'controllerName' => self::extractControllerName($className),
+                'controllerName' => self::resolveControllerName($className, $path, $area),
                 'pathVariables' => $pathVarMatches[1],
             ];
         }
@@ -1237,7 +1237,28 @@ final class AttributeCompiler
     }
 
     /**
+     * URL-facing controller name for a route.
+     *
+     * Admin and install paths carry it in segment 1, which is authoritative: the class name is
+     * ambiguous there (`Vendor_Module_Adminhtml_Foo` is `foo` in the adminhtml `<modules>`
+     * chain but `adminhtml_foo` under its own admin frontName). Frontend paths often omit the
+     * segment (`/wishlist` → `index`), so they keep deriving it from the class.
+     */
+    private static function resolveControllerName(string $className, string $path, string $area): string
+    {
+        if ($area === 'adminhtml' || $area === 'install') {
+            $segment = explode('/', trim($path, '/'))[1] ?? '';
+            if (preg_match('/^\w+$/', $segment) === 1) {
+                return strtolower($segment);
+            }
+        }
+
+        return self::extractControllerName($className);
+    }
+
+    /**
      * Extract the controller short name from a controller class name.
+     * Fallback for paths with no literal controller segment; see resolveControllerName().
      *
      * Legacy underscore-style:
      *   'Mage_Checkout_CartController' → 'cart'
@@ -1284,13 +1305,8 @@ final class AttributeCompiler
             $controllerParts = array_slice($parts, 2);
 
             // Sub-module admin controllers live in a controllers/Adminhtml/ subdirectory.
-            // The 'Adminhtml' segment is organizational (not part of the URL controller name)
-            // and should be skipped — unless the module itself is named 'Adminhtml'
-            // (e.g. Mage_Adminhtml_Catalog_ProductController → 'catalog_product').
-            if (
-                strtolower($controllerParts[0]) === 'adminhtml'
-                && strtolower($parts[1]) !== 'adminhtml'
-            ) {
+            // That segment is organizational, not part of the URL controller name.
+            if (count($controllerParts) > 1 && strtolower($controllerParts[0]) === 'adminhtml') {
                 array_shift($controllerParts);
             }
 
