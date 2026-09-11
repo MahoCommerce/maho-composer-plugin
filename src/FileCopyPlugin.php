@@ -55,17 +55,14 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
         $io = $event->getIO();
         $composer = $event->getComposer();
 
-        // A module package is never a deployment target: running composer
-        // inside a module repo (e.g. to install its dev tools) must not
-        // publish maho's core assets, the CLI or any other module's assets
-        // into it. Only child projects get the assets published.
+        // A module repo is not a deployment target, only child projects get the assets
         if (in_array($composer->getPackage()->getType(), ['maho-module', 'magento-module'], true)) {
             if ($io->isVerbose()) {
                 $io->write('Root package is a maho module: skipping asset publication.');
             }
-
             return;
         }
+
         /** @var string */
         $vendorDir = $composer->getConfig()->get('vendor-dir');
         $projectDir = getcwd();
