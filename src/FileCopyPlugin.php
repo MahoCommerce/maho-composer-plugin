@@ -54,6 +54,17 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
 
         $io = $event->getIO();
         $composer = $event->getComposer();
+        $rootPackage = $composer->getPackage();
+        $extra = $rootPackage->getExtra();
+
+        // A module repo is not a deployment target, only child projects get the assets.
+        // Set extra.maho.publish-assets to true to publish them anyway.
+        $publishAssets = isset($extra['maho']) && is_array($extra['maho']) && ($extra['maho']['publish-assets'] ?? false) === true;
+        if (!$publishAssets && in_array($rootPackage->getType(), ['maho-module', 'magento-module'], true)) {
+            $io->write('Root package is a maho module: skipping asset publication.', true, IOInterface::VERBOSE);
+            return;
+        }
+
         /** @var string */
         $vendorDir = $composer->getConfig()->get('vendor-dir');
         $projectDir = getcwd();
@@ -63,7 +74,6 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
         $this->projectDir = $projectDir;
 
         // Get preserve-files configuration
-        $extra = $composer->getPackage()->getExtra();
         if (isset($extra['maho']) && is_array($extra['maho']) && isset($extra['maho']['preserve-files']) && is_array($extra['maho']['preserve-files'])) {
             // Validate that all entries are strings
             $preserveFilesCandidate = $extra['maho']['preserve-files'];
@@ -117,12 +127,12 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
     private function copyDirectory(string $src, string $dst, IOInterface $io): void
     {
         if (!is_dir($src)) {
-            $io->write("Source directory does not exist: $src");
+            $io->writeError("<warning>Source directory does not exist: $src</warning>");
             return;
         }
 
         if (($dir = opendir($src)) === false) {
-            $io->write("Source directory could not be opened: $src");
+            $io->writeError("<warning>Source directory could not be opened: $src</warning>");
             return;
         }
         @mkdir($dst, 0777, true);
