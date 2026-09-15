@@ -294,7 +294,7 @@ final class ApiPermissionCompiler
             return '';
         }
 
-        return (new DashPathSegmentNameGenerator())->getSegmentName($shortName, true);
+        return new DashPathSegmentNameGenerator()->getSegmentName($shortName, true);
     }
 
     /**

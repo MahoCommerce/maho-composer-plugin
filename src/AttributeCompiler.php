@@ -1114,13 +1114,7 @@ final class AttributeCompiler
         // (every candidate subclasses it), so the winner is always an actual override.
         $maximal = [];
         foreach ($set as $candidate) {
-            $isMaximal = true;
-            foreach ($set as $other) {
-                if ($other !== $candidate && is_subclass_of($other, $candidate)) {
-                    $isMaximal = false;
-                    break;
-                }
-            }
+            $isMaximal = array_all($set, fn($other) => !($other !== $candidate && is_subclass_of($other, $candidate)));
             if ($isMaximal) {
                 $maximal[] = $candidate;
             }
@@ -1284,13 +1278,7 @@ final class AttributeCompiler
         if (str_contains($name, '\\')) {
             // PSR-4: take all segments after 'Controller' namespace segment (skip vendor+module prefix too)
             $parts = explode('\\', $name);
-            $controllerNsIdx = null;
-            foreach ($parts as $i => $part) {
-                if (strtolower($part) === 'controller') {
-                    $controllerNsIdx = $i;
-                    break;
-                }
-            }
+            $controllerNsIdx = array_find_key($parts, fn($part) => strtolower($part) === 'controller');
             if ($controllerNsIdx !== null) {
                 $controllerParts = array_slice($parts, $controllerNsIdx + 1);
             } else {
