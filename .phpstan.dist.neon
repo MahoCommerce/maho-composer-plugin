@@ -5,8 +5,8 @@ includes:
     - vendor/composer/composer/phpstan/rules.neon
 parameters:
     phpVersion:
-        min: 80200
-        max: 80499
+        min: 80500
+        max: 80599
     paths:
         - src
     level: 10
