@@ -12,6 +12,7 @@ use ApiPlatform\Metadata\Operation\DashPathSegmentNameGenerator;
 use ApiPlatform\Metadata\Patch;
 use ApiPlatform\Metadata\Post;
 use ApiPlatform\Metadata\Put;
+use ApiPlatform\Metadata\Query;
 use Composer\IO\IOInterface;
 use Maho\Config\ApiResource;
 use ReflectionAttribute;
@@ -44,6 +45,7 @@ final class ApiPermissionCompiler
     private const HTTP_OP_TO_VERB = [
         Get::class           => 'read',
         GetCollection::class => 'read',
+        Query::class         => 'read',
         Post::class          => 'create',
         Put::class           => 'write',
         Patch::class         => 'write',
@@ -369,7 +371,7 @@ final class ApiPermissionCompiler
         }
         if ($op instanceof HttpOperation) {
             return match (strtoupper($op->getMethod())) {
-                'GET', 'HEAD'  => 'read',
+                'GET', 'HEAD', 'QUERY' => 'read',
                 'POST'         => 'create',
                 'PUT', 'PATCH' => 'write',
                 'DELETE'       => 'delete',
