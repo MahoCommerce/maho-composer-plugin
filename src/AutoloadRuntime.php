@@ -205,7 +205,7 @@ final class AutoloadRuntime
         $packages = self::getInstalledPackages();
         $classMap = [];
 
-        foreach ($packages as $package => $info) {
+        foreach ($packages as $info) {
             if ($info['type'] === 'maho-source') {
                 if (file_exists($info['path'] . '/app/Mage.php')) {
                     $classMap['Mage'] = $info['path'] . '/app/Mage.php';
@@ -250,7 +250,7 @@ final class AutoloadRuntime
         $files = [];
         $filesCore = [];
 
-        foreach ($packages as $package => $info) {
+        foreach ($packages as $info) {
             if ($info['type'] === 'maho-source') {
                 if (file_exists($info['path'] . '/app/code/core/Mage/Core/functions.php')) {
                     $filesCore['functions'] = $info['path'] . '/app/code/core/Mage/Core/functions.php';
