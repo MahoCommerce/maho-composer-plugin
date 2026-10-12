@@ -209,10 +209,10 @@ final class ApiPermissionCompiler
 
         // Strip the diagnostics-only `_class` key that's used to distinguish
         // same-class merges from cross-class collisions during scan.
-        foreach ($resources as &$entry) {
-            unset($entry['_class']);
+        foreach ($resources as &$resourceEntry) {
+            unset($resourceEntry['_class']);
         }
-        unset($entry);
+        unset($resourceEntry);
 
         $data = [
             'resources' => $resources,
