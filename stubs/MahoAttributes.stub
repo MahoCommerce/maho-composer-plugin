@@ -41,6 +41,20 @@ class MessageHandler
     }
 }
 
+#[\Attribute(\Attribute::TARGET_METHOD)]
+class TailwindSource
+{
+    /**
+     * @param list<string> $fields
+     */
+    public function __construct(
+        public string $id,
+        public ?string $model = null,
+        public array $fields = [],
+    ) {
+    }
+}
+
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
 class Route
 {

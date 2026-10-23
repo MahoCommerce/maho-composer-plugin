@@ -9,6 +9,7 @@ use Maho\Config\CronJob;
 use Maho\Config\MessageHandler;
 use Maho\Config\Observer;
 use Maho\Config\Route;
+use Maho\Config\TailwindSource;
 use ReflectionClass;
 use ReflectionMethod;
 use Symfony\Component\Routing\Generator\Dumper\CompiledUrlGeneratorDumper;
@@ -45,6 +46,11 @@ final class AttributeCompiler
      * autoload lookups. Must be computed while the temporary classmap autoloader is registered.
      */
     private static ?bool $messageHandlerAvailable = null;
+
+    /**
+     * Memoised class_exists(TailwindSource::class), for the same reason as $messageHandlerAvailable.
+     */
+    private static ?bool $tailwindSourceAvailable = null;
 
     /**
      * Map of class prefix → model group alias built from config.xml files.
@@ -85,6 +91,7 @@ final class AttributeCompiler
      *     crontab: array<string, array{module: string, alias: string, method: string, schedule: ?string, config_path: ?string}>,
      *     messageHandlers: array<string, list<array{module: string, class: string, alias: string, method: string, priority: int}>>,
      *     routes: array<string, array{path: string, class: string, action: string, methods: list<string>, defaults: array<string, mixed>, requirements: array<string, string>, area: string, module: string, controllerName: string, pathVariables: list<string>}>,
+     *     tailwindSources: array<string, array{module: string, class: string, alias: string, method: string, model: ?string, fields: list<string>}>,
      *     replaces?: array<string, array<string, list<array{target: string}>>>,
      *     reverseLookup: array<string, string>,
      *     controllerLookup: array<string, string>
@@ -123,6 +130,7 @@ final class AttributeCompiler
             'crontab' => [],
             'messageHandlers' => [],
             'routes' => [],
+            'tailwindSources' => [],
             'reverseLookup' => [],
             'controllerLookup' => [],
         ];
@@ -156,6 +164,7 @@ final class AttributeCompiler
                     && !str_contains($contents, 'Maho\Config\CronJob')
                     && !str_contains($contents, 'Maho\Config\MessageHandler')
                     && !str_contains($contents, 'Maho\Config\Route')
+                    && !str_contains($contents, 'Maho\Config\TailwindSource')
                 ) {
                     continue;
                 }
@@ -179,6 +188,7 @@ final class AttributeCompiler
                     self::processCronJobAttributes($method, $className, $log);
                     self::processMessageHandlerAttributes($method, $className, $log);
                     self::processRouteAttributes($method, $className, $log);
+                    self::processTailwindSourceAttributes($method, $className, $log);
                 }
             }
 
@@ -206,6 +216,7 @@ final class AttributeCompiler
         self::$activeModulesBuilt = false;
         self::$scannedClassesCache = null;
         self::$messageHandlerAvailable = null;
+        self::$tailwindSourceAvailable = null;
         self::$classAliasMap = [];
         self::$controllerOverrides = [];
     }
@@ -596,6 +607,57 @@ final class AttributeCompiler
                 'alias' => self::resolveClassAlias($className) ?? $className,
                 'method' => $method->getName(),
                 'priority' => $handler->priority,
+            ];
+        }
+    }
+
+    private static function processTailwindSourceAttributes(
+        ReflectionMethod $method,
+        string $className,
+        ?\Closure $log,
+    ): void {
+        // Older maho cores ship without the attribute class; the feature is simply absent there.
+        self::$tailwindSourceAvailable ??= class_exists(TailwindSource::class);
+        if (!self::$tailwindSourceAvailable) {
+            return;
+        }
+
+        foreach ($method->getAttributes(TailwindSource::class) as $attribute) {
+            try {
+                $source = $attribute->newInstance();
+            } catch (\Throwable $e) {
+                self::logf(
+                    $log,
+                    'warning',
+                    'Skipping TailwindSource attribute on %s::%s: %s',
+                    $className,
+                    $method->getName(),
+                    $e->getMessage(),
+                );
+                continue;
+            }
+
+            $id = $source->id;
+            if (isset(self::$data['tailwindSources'][$id])) {
+                self::logf(
+                    $log,
+                    'warning',
+                    'TailwindSource id "%s" on %s::%s overwrites %s::%s',
+                    $id,
+                    $className,
+                    $method->getName(),
+                    self::$data['tailwindSources'][$id]['class'],
+                    self::$data['tailwindSources'][$id]['method'],
+                );
+            }
+
+            self::$data['tailwindSources'][$id] = [
+                'module' => self::extractModuleName($className),
+                'class' => $className,
+                'alias' => self::resolveClassAlias($className) ?? $className,
+                'method' => $method->getName(),
+                'model' => $source->model === null ? null : ltrim($source->model, '\\'),
+                'fields' => $source->fields,
             ];
         }
     }
