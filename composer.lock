@@ -79,16 +79,16 @@
         },
         {
             "name": "symfony/routing",
-            "version": "v8.1.8",
+            "version": "v8.1.9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/routing.git",
-                "reference": "e46d741c56485441f37104a3e7eace4e17ed91f9"
+                "reference": "edb06fb6ced3c1faaaed74c1c6c0f176a614c330"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/routing/zipball/e46d741c56485441f37104a3e7eace4e17ed91f9",
-                "reference": "e46d741c56485441f37104a3e7eace4e17ed91f9",
+                "url": "https://api.github.com/repos/symfony/routing/zipball/edb06fb6ced3c1faaaed74c1c6c0f176a614c330",
+                "reference": "edb06fb6ced3c1faaaed74c1c6c0f176a614c330",
                 "shasum": ""
             },
             "require": {
@@ -135,7 +135,7 @@
                 "url"
             ],
             "support": {
-                "source": "https://github.com/symfony/routing/tree/v8.1.8"
+                "source": "https://github.com/symfony/routing/tree/v8.1.9"
             },
             "funding": [
                 {
@@ -155,22 +155,22 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-09-28T19:13:15+00:00"
+            "time": "2026-10-12T12:37:13+00:00"
         }
     ],
     "packages-dev": [
         {
             "name": "api-platform/core",
-            "version": "v5.0.3",
+            "version": "v5.0.4",
             "source": {
                 "type": "git",
                 "url": "https://github.com/api-platform/core.git",
-                "reference": "9bdc3405a74071608ebd62edb0a51bfc62c0d883"
+                "reference": "1eef9e4f1e899af2f8439ecafc3e91a705516159"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/api-platform/core/zipball/9bdc3405a74071608ebd62edb0a51bfc62c0d883",
-                "reference": "9bdc3405a74071608ebd62edb0a51bfc62c0d883",
+                "url": "https://api.github.com/repos/api-platform/core/zipball/1eef9e4f1e899af2f8439ecafc3e91a705516159",
+                "reference": "1eef9e4f1e899af2f8439ecafc3e91a705516159",
                 "shasum": ""
             },
             "require": {
@@ -375,9 +375,9 @@
             ],
             "support": {
                 "issues": "https://github.com/api-platform/core/issues",
-                "source": "https://github.com/api-platform/core/tree/v5.0.3"
+                "source": "https://github.com/api-platform/core/tree/v5.0.4"
             },
-            "time": "2026-10-09T14:54:01+00:00"
+            "time": "2026-10-16T14:57:02+00:00"
         },
         {
             "name": "clue/ndjson-react",
@@ -842,16 +842,16 @@
         },
         {
             "name": "composer/semver",
-            "version": "3.5.1",
+            "version": "3.5.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/composer/semver.git",
-                "reference": "528948210cc46f967a4b98e83b19e76f2b504993"
+                "reference": "9dfce66f1e97360ea5e6d3e38ab14277e4cc591e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/composer/semver/zipball/528948210cc46f967a4b98e83b19e76f2b504993",
-                "reference": "528948210cc46f967a4b98e83b19e76f2b504993",
+                "url": "https://api.github.com/repos/composer/semver/zipball/9dfce66f1e97360ea5e6d3e38ab14277e4cc591e",
+                "reference": "9dfce66f1e97360ea5e6d3e38ab14277e4cc591e",
                 "shasum": ""
             },
             "require": {
@@ -903,7 +903,7 @@
             "support": {
                 "irc": "ircs://irc.libera.chat:6697/composer",
                 "issues": "https://github.com/composer/semver/issues",
-                "source": "https://github.com/composer/semver/tree/3.5.1"
+                "source": "https://github.com/composer/semver/tree/3.5.2"
             },
             "funding": [
                 {
@@ -915,7 +915,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-10-05T13:12:12+00:00"
+            "time": "2026-10-22T15:37:26+00:00"
         },
         {
             "name": "composer/spdx-licenses",
