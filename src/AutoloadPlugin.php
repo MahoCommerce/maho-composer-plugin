@@ -25,8 +25,7 @@ use Composer\Util\Filesystem;
  *         "Mage_Customer_": [
  *             "app/code/local",
  *             "vendor/mahocommerce/maho/app/code/core"
- *         ],
- *         "Zend_" => "vendor/shardj/zf1-future/library"
+ *         ]
  *     },
  *     "classmap": {
  *         "Mage": "vendor/mahocommerce/maho/app/Mage.php",

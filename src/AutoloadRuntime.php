@@ -162,7 +162,6 @@ final class AutoloadRuntime
      * Example: [
      *     "Mage_Core_" => ["vendor/mahocommerce/maho/app/code/core"],
      *     "Mage_Customer_" => ["app/code/local", "vendor/mahocommerce/maho/app/code/core"],
-     *     "Zend_" => ["vendor/shardj/zf1-future/library"],
      *     // ...
      * ];
      *
