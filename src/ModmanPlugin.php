@@ -25,6 +25,7 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
     private Composer $composer;
     private Filesystem $filesystem;
 
+    #[\Override]
     public function activate(Composer $composer, IOInterface $io)
     {
         $this->io = $io;
@@ -32,10 +33,13 @@ final class ModmanPlugin implements PluginInterface, EventSubscriberInterface
         $this->filesystem = new Filesystem();
     }
 
+    #[\Override]
     public function deactivate(Composer $composer, IOInterface $io) {}
 
+    #[\Override]
     public function uninstall(Composer $composer, IOInterface $io) {}
 
+    #[\Override]
     public static function getSubscribedEvents()
     {
         return [
