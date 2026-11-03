@@ -20,21 +20,25 @@ final class FileCopyPlugin implements PluginInterface, EventSubscriberInterface
 
     private string $projectDir = '';
 
+    #[\Override]
     public function activate(Composer $composer, IOInterface $io)
     {
         // This method is called when the plugin is activated
     }
 
+    #[\Override]
     public function deactivate(Composer $composer, IOInterface $io)
     {
         // This method is called when the plugin is deactivated
     }
 
+    #[\Override]
     public function uninstall(Composer $composer, IOInterface $io)
     {
         // This method is called when the plugin is uninstalled
     }
 
+    #[\Override]
     public static function getSubscribedEvents()
     {
         return [
