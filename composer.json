@@ -7,7 +7,7 @@
         "php": ">=8.5.1",
         "composer-plugin-api": "^2.1",
         "composer-runtime-api": "^2",
-        "symfony/routing": "^8.1"
+        "symfony/routing": "^8.1.11"
     },
     "require-dev": {
         "phpstan/phpstan": "^2.0",
