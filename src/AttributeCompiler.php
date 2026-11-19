@@ -312,6 +312,9 @@ final class AttributeCompiler
             }
         }
 
+        // The file order depends on the file system, so sort to compile the same files on every host.
+        ksort($classes);
+
         return $classes;
     }
 
@@ -1433,9 +1436,20 @@ final class AttributeCompiler
             return;
         }
 
+        // The matcher returns the first route that matches, and the `{_adminFrontName}`
+        // placeholder matches any first segment. An admin route that comes first can catch a
+        // frontend URL with the same path after the first segment, for example
+        // /admin/checkout/clientToken and /braintree/checkout/clientToken. The dispatcher then
+        // rejects it as a wrong admin frontName, and the frontend URL gives a 404. The scan order
+        // of the controller files depends on the file system, so the admin routes go last. The
+        // order inside each group does not change.
+        $isAdminRoute = static fn(array $route): bool => $route['area'] === 'adminhtml';
+        $routes = array_filter(self::$data['routes'], static fn(array $route): bool => !$isAdminRoute($route))
+            + array_filter(self::$data['routes'], $isAdminRoute);
+
         $collection = new RouteCollection();
 
-        foreach (self::$data['routes'] as $name => $route) {
+        foreach ($routes as $name => $route) {
             $path = $route['path'];
             $requirements = $route['requirements'];
 
