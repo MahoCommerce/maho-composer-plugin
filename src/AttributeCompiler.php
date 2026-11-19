@@ -312,6 +312,9 @@ final class AttributeCompiler
             }
         }
 
+        // The file order depends on the file system, so sort to compile the same files on every host.
+        ksort($classes);
+
         return $classes;
     }
 
