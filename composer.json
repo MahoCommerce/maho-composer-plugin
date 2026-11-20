@@ -16,7 +16,8 @@
         "composer/composer": "^2.9.3",
         "api-platform/core": "^5.0",
         "friendsofphp/php-cs-fixer": "*",
-        "rector/rector": "*"
+        "rector/rector": "*",
+        "pestphp/pest": "^5"
     },
     "autoload": {
         "psr-4": {
@@ -28,7 +29,8 @@
             "php": "8.5.1"
         },
         "allow-plugins": {
-            "php-http/discovery": false
+            "php-http/discovery": false,
+            "pestphp/pest-plugin": true
         }
     },
     "extra": {
