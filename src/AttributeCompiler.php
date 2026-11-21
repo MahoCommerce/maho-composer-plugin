@@ -526,7 +526,11 @@ final class AttributeCompiler
                 continue;
             }
 
-            if ($cronJob->schedule === null && $cronJob->configPath === null) {
+            if (
+                $cronJob->schedule === null
+                && $cronJob->configPath === null
+                && !defined(CronJob::class . '::SUPPORTS_MANUAL_ONLY_JOBS')
+            ) {
                 self::logf(
                     $log,
                     'warning',
